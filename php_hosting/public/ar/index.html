@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Баня на участке</title>
+  <style>
+    html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#dbe4ec;font-family:Inter,system-ui,-apple-system,Segoe UI,Arial,sans-serif}
+    .wrap{position:relative;width:100%;height:100%}
+    model-viewer{position:absolute;inset:0;width:100%;height:100%;background:linear-gradient(180deg,#d8e9f7 0%,#e5ebf0 46%,#aeb8c1 100%)}
+    .top{position:absolute;left:12px;top:12px;z-index:4;pointer-events:none}
+    .badge{background:rgba(255,255,255,.92);backdrop-filter:blur(12px);border:1px solid rgba(148,163,184,.35);box-shadow:0 12px 30px rgba(15,23,42,.12);color:#172033;border-radius:999px;padding:10px 14px;font-weight:800;pointer-events:auto}
+    .notice{position:absolute;left:12px;right:12px;top:56px;z-index:4;display:none;padding:10px 12px;border-radius:16px;background:rgba(255,255,255,.92);backdrop-filter:blur(12px);border:1px solid rgba(148,163,184,.35);box-shadow:0 12px 30px rgba(15,23,42,.12);color:#334155;font-size:12px;font-weight:700;line-height:1.35}
+    .notice.on{display:block}
+    .actions{position:absolute;left:12px;right:12px;bottom:max(18px,env(safe-area-inset-bottom));z-index:5;display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .ar-button,.copy-button{border:none;border-radius:999px;padding:14px 16px;font-weight:900;font-size:15px;box-shadow:0 12px 30px rgba(15,23,42,.2);cursor:pointer;white-space:nowrap}
+    .ar-button{background:#0f766e;color:#fff}
+    .copy-button{background:rgba(255,255,255,.94);color:#172033;border:1px solid rgba(148,163,184,.35)}
+    .status{position:absolute;left:12px;right:12px;bottom:max(78px,calc(env(safe-area-inset-bottom) + 78px));z-index:5;text-align:center;color:#475569;font-weight:700;font-size:13px;pointer-events:none}
+    .unsupported{position:absolute;inset:0;z-index:8;display:none;align-items:center;justify-content:center;padding:18px;background:rgba(15,23,42,.36);backdrop-filter:blur(8px)}
+    .unsupported.on{display:flex}
+    .unsupported-card{max-width:420px;width:100%;border-radius:22px;background:rgba(255,255,255,.96);border:1px solid rgba(148,163,184,.45);box-shadow:0 24px 60px rgba(15,23,42,.28);padding:18px;color:#172033}
+    .unsupported-card h2{margin:0 0 8px;font-size:20px;line-height:1.15}
+    .unsupported-card p{margin:0;color:#475569;font-weight:700;line-height:1.4}
+    .unsupported-card button{margin-top:14px;width:100%;border:0;border-radius:999px;background:#0f766e;color:#fff;padding:13px 16px;font-weight:900;font-size:15px}
+    @media (max-width:420px){.actions{grid-template-columns:1fr}.copy-button{padding-top:12px;padding-bottom:12px}}
+  </style>
+  <script type="module" src="https://unpkg.com/@google/model-viewer@4.0.0/dist/model-viewer.min.js"></script>
+</head>
+<body>
+  <div class="wrap">
+    <model-viewer
+      src="./assets/bath.glb"
+      ios-src="./assets/bath-ios-v6.usdz"
+      ar
+      ar-modes="scene-viewer quick-look webxr"
+      ar-placement="floor"
+      ar-scale="auto"
+      camera-controls
+      auto-rotate
+      touch-action="pan-y"
+      shadow-intensity="0"
+      exposure="0.68"
+      alt="Баня на участке">
+    </model-viewer>
+    <div class="top"><div class="badge">Баня</div></div>
+    <div id="notice" class="notice">Если страница открыта внутри Telegram, WhatsApp или MAX, встроенный браузер может ограничивать камеру и AR. В этом случае модель можно смотреть прямо здесь в 3D, а для AR лучше открыть ссылку в Safari или Chrome.</div>
+    <div class="actions">
+      <button id="openArButton" class="ar-button" type="button">Смотреть на участке</button>
+      <button id="copyLinkButton" class="copy-button" type="button">Скопировать ссылку</button>
+    </div>
+    <div id="status" class="status"></div>
+    <div id="unsupported" class="unsupported">
+      <div class="unsupported-card">
+        <h2>AR не поддерживается на этом устройстве</h2>
+        <p id="unsupportedText">Можно посмотреть баню в 3D на этой странице. Для режима камеры нужен Safari на iPhone или Android Chrome с поддержкой ARCore.</p>
+        <button id="unsupportedClose" type="button">Смотреть в 3D</button>
+      </div>
+    </div>
+  </div>
+  <script>
+    const viewer = document.querySelector('model-viewer');
+    const button = document.getElementById('openArButton');
+    const copyButton = document.getElementById('copyLinkButton');
+    const status = document.getElementById('status');
+    const notice = document.getElementById('notice');
+    const unsupported = document.getElementById('unsupported');
+    const unsupportedText = document.getElementById('unsupportedText');
+    const unsupportedClose = document.getElementById('unsupportedClose');
+    const fileUrl = new URL('./assets/bath-android.glb', location.href).href;
+    const usdzUrl = new URL('./assets/bath-ios-v6.usdz', location.href).href;
+    const fallbackUrl = new URL('./', location.href).href;
+    const ua = navigator.userAgent || '';
+    const isAndroid = /Android/i.test(ua);
+    const isIOS = /iPad|iPhone|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const isInApp = /(Telegram|WhatsApp|FBAN|FBAV|Instagram|Messenger|Line|WebView|wv|MAX)/i.test(ua);
+    const isHuawei = /HUAWEI|Huawei|HONOR|HarmonyOS|HMSCore|MatePad/i.test(ua);
+    let arLaunchPending = false;
+
+    if (isInApp || isHuawei) notice.classList.add('on');
+    if (isHuawei) {
+      status.textContent = 'На Huawei/HarmonyOS режим камеры AR часто недоступен. 3D просмотр работает на этой странице.';
+    }
+
+    function showUnsupported(text) {
+      unsupportedText.textContent = text || 'Можно посмотреть баню в 3D на этой странице. Для режима камеры нужен Safari на iPhone или Android Chrome с поддержкой ARCore.';
+      unsupported.classList.add('on');
+    }
+
+    function openAndroidSceneViewer() {
+      arLaunchPending = true;
+      const intent = 'intent://arvr.google.com/scene-viewer/1.0'
+        + '?file=' + encodeURIComponent(fileUrl)
+        + '&mode=ar_preferred'
+        + '&resizable=true'
+        + '#Intent;scheme=https;package=com.google.android.googlequicksearchbox;action=android.intent.action.VIEW;'
+        + 'S.browser_fallback_url=' + encodeURIComponent(fallbackUrl)
+        + ';end;';
+      location.href = intent;
+      window.setTimeout(() => {
+        if (arLaunchPending && !document.hidden) {
+          showUnsupported('На этом устройстве не открылся AR-режим. Обычно нужен Android Chrome, Google app и поддержка Google Play Services for AR. 3D просмотр остается доступен здесь.');
+          arLaunchPending = false;
+        }
+      }, 6500);
+    }
+
+    function openIOSQuickLook() {
+      const link = document.createElement('a');
+      link.setAttribute('rel', 'ar');
+      link.setAttribute('href', usdzUrl);
+      const img = document.createElement('img');
+      img.setAttribute('alt', 'Баня');
+      img.setAttribute('src', 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO1m4r8AAAAASUVORK5CYII=');
+      link.appendChild(img);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    }
+
+    async function openAR() {
+      status.textContent = '';
+      if (isInApp) {
+        status.textContent = 'Встроенный браузер может ограничивать камеру. Если AR не откроется, откройте ссылку в Safari или Chrome.';
+      }
+      if (isHuawei) {
+        showUnsupported('На Huawei MatePad и HarmonyOS обычно нет Google ARCore/Scene Viewer, поэтому режим камеры может не открываться. Можно смотреть и крутить баню в 3D прямо на этой странице.');
+        return;
+      }
+      if (isAndroid) {
+        openAndroidSceneViewer();
+        return;
+      }
+      if (isIOS) {
+        openIOSQuickLook();
+        return;
+      }
+      if (viewer && typeof viewer.activateAR === 'function') {
+        try {
+          await viewer.activateAR();
+          return;
+        } catch (err) {
+          console.warn('activateAR failed', err);
+        }
+      }
+      showUnsupported('AR не запустился на этом устройстве. 3D просмотр доступен без камеры прямо на странице.');
+    }
+
+    button.addEventListener('click', openAR);
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) arLaunchPending = false;
+    });
+    unsupportedClose.addEventListener('click', () => unsupported.classList.remove('on'));
+    copyButton.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(location.href);
+        status.textContent = 'Ссылка скопирована.';
+      } catch (err) {
+        status.textContent = 'Не удалось скопировать ссылку.';
+      }
+    });
+    viewer.addEventListener('ar-status', event => {
+      if (event.detail.status === 'failed') {
+        status.textContent = 'AR не запустился. Проверьте поддержку AR на устройстве.';
+        showUnsupported('AR не запустился на этом устройстве. 3D просмотр доступен без камеры прямо на странице.');
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,25 @@
+﻿**********************
+Windows PowerShell transcript start
+Start time: 20260530172847
+Username: SGONCHAROFF\sgonc
+RunAs User: SGONCHAROFF\sgonc
+Configuration Name: 
+Machine: SGONCHAROFF (Microsoft Windows NT 10.0.22631.0)
+Host Application: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -ExecutionPolicy Bypass -File .\run_with_transcript.ps1 -ScriptPath .\scripts\05_vps_deploy_php_app.ps1
+Process ID: 5216
+PSVersion: 5.1.22621.6133
+PSEdition: Desktop
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.22621.6133
+BuildVersion: 10.0.22621.6133
+CLRVersion: 4.0.30319.42000
+WSManStackVersion: 3.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+**********************
+Enter passphrase (empty for no passphrase):
+Enter passphrase (empty for no passphrase):
+Enter passphrase (empty for no passphrase):
+**********************
+Windows PowerShell transcript end
+End time: 20260530172849
+**********************

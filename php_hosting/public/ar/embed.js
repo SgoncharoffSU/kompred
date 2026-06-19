@@ -1,0 +1,25 @@
+(function(){
+  var current = document.currentScript || (function(){ var s=document.getElementsByTagName('script'); return s[s.length-1]; })();
+  var src = current.getAttribute('data-src') || current.src.replace(/\/embed\.js(\?.*)?$/, '/');
+  var model = current.getAttribute('data-model') || 'siberia';
+  var width = current.getAttribute('data-width') || '';
+  var depth = current.getAttribute('data-depth') || '';
+  var height = current.getAttribute('data-height') || '720px';
+  var target = current.getAttribute('data-target');
+  var mount = target ? document.querySelector(target) : current.parentNode;
+  if(!mount) return;
+  var url = new URL(src, location.href);
+  url.searchParams.set('model', model);
+  if(width) url.searchParams.set('w', width);
+  if(depth) url.searchParams.set('d', depth);
+  var iframe = document.createElement('iframe');
+  iframe.src = url.toString();
+  iframe.title = '3D экскурсия по бане';
+  iframe.allow = 'camera; xr-spatial-tracking; fullscreen';
+  iframe.style.width = '100%';
+  iframe.style.height = height;
+  iframe.style.border = '0';
+  iframe.style.display = 'block';
+  iframe.style.borderRadius = current.getAttribute('data-radius') || '0';
+  mount.appendChild(iframe);
+})();

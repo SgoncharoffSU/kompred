@@ -167,6 +167,29 @@
   </div>
 
   <div id="ctxMenu" class="ctx"></div>
+
+  <!-- Layouts modal -->
+  <div id="layoutsModal" class="modal">
+    <div class="d" style="max-width:560px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div>
+          <b id="layoutsModalTitle">Планировки</b>
+          <div class="tiny" id="layoutsModelName" style="margin-top:2px"></div>
+        </div>
+        <button class="btn" onclick="closeLayoutsModal()">Закрыть</button>
+      </div>
+      <div id="layoutsList" style="margin-bottom:12px"></div>
+      <div style="border-top:1px solid var(--l);padding-top:12px">
+        <b style="font-size:13px">Добавить планировку</b>
+        <div style="display:grid;grid-template-columns:1fr auto auto;gap:8px;margin-top:8px;align-items:end">
+          <div class="field" style="margin:0"><label>Название</label><input id="newLayoutName" placeholder="Например: 3×4 с мойкой и парной"></div>
+          <div class="field" style="margin:0"><label>Надбавка, ₽</label><input id="newLayoutPrice" type="number" min="0" step="1000" value="0" style="width:110px"></div>
+          <button class="btn a" onclick="addLayout()">+ Добавить</button>
+        </div>
+        <div id="layoutsError" class="tiny" style="color:#ef4444;margin-top:6px"></div>
+      </div>
+    </div>
+  </div>
 <script>
 const S={tab:'m',models:[],options:[],groups:[],media:[],folders:[],activeFolderId:0,activeModelId:null,activeOptionGroupId:null,page:{blocks:[]},selectedBlockId:null,selectedElId:null,selectedPart:'element',selectedImgTextIdx:0,imageTextOpen:true,insertAt:0,dirty:false,timer:null,saving:false,uploading:false,lastHash:'',optionEditorId:null,editingImgUrl:null};
 const $=id=>document.getElementById(id), api=(u,o)=>fetch(u,o).then(r=>r.json()), uid=p=>p+Math.random().toString(36).slice(2,8), clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
@@ -278,13 +301,15 @@ function renderModels(){
     const d=document.createElement('div');
     d.className='item'+(parseInt(S.activeModelId||0,10)===parseInt(m.id,10)?' model-active':'');
     const basePrice = Number(m.base_price||0).toLocaleString('ru-RU');
-    d.innerHTML=`<div style="min-width:0;display:grid;gap:8px;flex:1"><a href="#" class="model-link" data-act="open">${esc(m.name)}</a><label style="display:grid;gap:4px;font-size:12px;font-weight:700;color:#334155">Базовая стоимость<div style="display:flex;align-items:center;gap:6px"><input type="number" min="0" step="1000" value="${Number(m.base_price||0)}" data-act="base" style="width:100%;padding:7px 9px;border-radius:8px;font-weight:700;background:#f8fafc"><span style="font-weight:800;color:#0f766e">₽</span></div></label></div><div style="display:flex;gap:4px;align-items:center;flex-shrink:0"><button class="icon-btn" data-act="edit" title="Редактировать" aria-label="Редактировать">✎</button><button class="icon-btn" data-act="copy" title="Копировать" aria-label="Копировать"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"></rect><rect x="2" y="2" width="13" height="13" rx="2"></rect></svg></button><button class="icon-btn" data-act="del" title="Удалить" aria-label="Удалить">🗑</button></div>`;
+    d.innerHTML=`${m.image_url?`<div style="width:64px;height:64px;flex-shrink:0;border-radius:8px;overflow:hidden;border:1px solid #e2e8f0"><img src="${normalizeUrl(m.image_url)}" style="width:100%;height:100%;object-fit:cover"></div>`:''}<div style="min-width:0;display:grid;gap:8px;flex:1"><a href="#" class="model-link" data-act="open">${esc(m.name)}</a><label style="display:grid;gap:4px;font-size:12px;font-weight:700;color:#334155">Базовая стоимость<div style="display:flex;align-items:center;gap:6px"><input type="number" min="0" step="1000" value="${Number(m.base_price||0)}" data-act="base" style="width:100%;padding:7px 9px;border-radius:8px;font-weight:700;background:#f8fafc"><span style="font-weight:800;color:#0f766e">₽</span></div></label><button class="btn" data-act="layouts" style="font-size:11px;padding:5px 8px;color:#0f766e;border-color:#0f766e20;background:#f0fdf4" title="Управлять планировками конфигуратора">⊞ Планировки конфигуратора</button></div><div style="display:flex;gap:4px;align-items:center;flex-shrink:0"><button class="icon-btn" data-act="img" title="Фото модели" aria-label="Фото модели">🖼</button><button class="icon-btn" data-act="edit" title="Редактировать" aria-label="Редактировать">✎</button><button class="icon-btn" data-act="copy" title="Копировать" aria-label="Копировать"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"></rect><rect x="2" y="2" width="13" height="13" rx="2"></rect></svg></button><button class="icon-btn" data-act="del" title="Удалить" aria-label="Удалить">🗑</button></div>`;
     d.querySelector('[data-act="open"]').onclick=(ev)=>{ev.preventDefault(); loadPage(m.id);};
     if(parseInt(S.activeModelId||0,10)===parseInt(m.id,10)){ const a=d.querySelector('.model-link'); if(a) a.setAttribute('aria-current','page'); }
     d.querySelector('[data-act="base"]').onchange=(ev)=>updateModelBasePrice(m, ev.target.value);
+    d.querySelector('[data-act="img"]').onclick=()=>setModelImage(m);
     d.querySelector('[data-act="edit"]').onclick=()=>editModel(m);
     d.querySelector('[data-act="copy"]').onclick=()=>copyModelById(m.id);
     d.querySelector('[data-act="del"]').onclick=()=>deleteModel(m);
+    d.querySelector('[data-act="layouts"]').onclick=(ev)=>{ ev.stopPropagation(); openLayoutsModal(m.id, m.name); };
     $('models').appendChild(d);
   });
   renderBlockAddMenu();
@@ -1075,7 +1100,25 @@ window.ctxFileCopy=async(id)=>{ const fd=new URLSearchParams(); fd.append('id',i
 window.ctxFileDelete=async(id)=>{ if(!confirm('Удалить файл?')) return; await deleteMedia(id); };
 
 $('tabM').onclick=()=>{S.tab='m';renderTabs()}; $('tabO').onclick=()=>{S.tab='o';renderTabs()}; $('tabD').onclick=()=>{S.tab='d';renderTabs()};
-$('newModel').onclick=async()=>{const name=prompt('Название модели'); if(!name)return; const base=prompt('Базовая стоимость','300000'); if(base===null)return; const fd=new URLSearchParams(); fd.append('name',name); fd.append('base_price',base||'300000'); const r=await api('./api/index.php?action=create_model',{method:'POST',body:fd}); if(r.ok){await boot(); await loadPage(r.id)}};
+$('newModel').onclick=async()=>{const name=prompt('Название модели'); if(!name)return; const base=prompt('Базовая стоимость','300000'); if(base===null)return; const fd=new URLSearchParams(); fd.append('name',name); fd.append('base_price',base||'300000'); fd.append('image_url',''); const r=await api('./api/index.php?action=create_model',{method:'POST',body:fd}); if(r.ok){await boot(); await loadPage(r.id)}};
+async function setModelImage(model){
+  const mediaItems=(S.media||[]).filter(x=>x.mime_type&&x.mime_type.startsWith('image'));
+  let picked=null;
+  if(mediaItems.length){
+    const names=mediaItems.map((m,i)=>`${i+1}. ${m.file_name}`).join('\n');
+    const choice=prompt('Введите номер фото из медиатеки или URL:\n\n'+names+'\n\nТекущее: '+(model.image_url||'нет'),'');
+    if(choice===null) return;
+    const num=parseInt(choice,10);
+    if(!isNaN(num)&&num>=1&&num<=mediaItems.length){picked=mediaItems[num-1].file_url;}
+    else{picked=choice.trim();}
+  } else {
+    picked=prompt('URL фото модели',model.image_url||'');
+    if(picked===null) return;
+  }
+  const fd=new URLSearchParams(); fd.append('id',model.id); fd.append('name',model.name||''); fd.append('image_url',picked||''); fd.append('base_price',String(model.base_price||300000));
+  const r=await api('./api/index.php?action=update_model',{method:'POST',body:fd});
+  if(r.ok){model.image_url=picked||''; renderModels();} else alert('Ошибка');
+}
 async function copyModelById(modelId){
   const fd=new URLSearchParams();
   fd.append('source_id', modelId);
@@ -1087,7 +1130,7 @@ async function editModel(model){
   if(!name || !name.trim()) return;
   const base = prompt('Базовая стоимость', String(model.base_price ?? 300000));
   if(base===null) return;
-  const fd=new URLSearchParams(); fd.append('id', model.id); fd.append('name', name.trim()); fd.append('base_price', base || '300000');
+  const fd=new URLSearchParams(); fd.append('id', model.id); fd.append('name', name.trim()); fd.append('base_price', base || '300000'); fd.append('image_url', model.image_url||'');
   const r=await api('./api/index.php?action=update_model',{method:'POST',body:fd});
   if(r.ok) await boot(); else alert('Ошибка редактирования модели');
 }
@@ -1096,6 +1139,7 @@ async function updateModelBasePrice(model, value){
   const fd=new URLSearchParams();
   fd.append('id', model.id);
   fd.append('name', model.name || '');
+  fd.append('image_url', model.image_url || '');
   fd.append('base_price', String(base));
   const r=await api('./api/index.php?action=update_model',{method:'POST',body:fd});
   if(r.ok){
@@ -1416,6 +1460,62 @@ window.addEventListener('hashchange',()=>{
   const next = h==='#media' ? 'd' : (h==='#options' ? 'o' : (h==='#models' ? 'm' : null));
   if(next && next!==S.tab){ S.tab=next; renderTabs(); }
 });
+// ── Layouts management ────────────────────────────────────────────────────────
+let layoutsModelId = null;
+const layoutsApi = (action, data={}) => {
+  if(Object.keys(data).length){
+    return fetch('/api/index.php?action='+action,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json());
+  }
+  const sp = new URLSearchParams({action,...data});
+  return fetch('/api/index.php?'+sp).then(r=>r.json());
+};
+function openLayoutsModal(modelId, modelName){
+  layoutsModelId = modelId;
+  $('layoutsModelName').textContent = modelName || '';
+  $('layoutsError').textContent = '';
+  $('layoutsModal').classList.add('on');
+  loadLayoutsList();
+}
+function closeLayoutsModal(){ $('layoutsModal').classList.remove('on'); layoutsModelId=null; }
+function loadLayoutsList(){
+  if(!layoutsModelId) return;
+  fetch('/api/index.php?action=get_layouts&model_id='+layoutsModelId).then(r=>r.json()).then(data=>{
+    const list = $('layoutsList');
+    if(!data.layouts || !data.layouts.length){ list.innerHTML='<div class="tiny" style="padding:8px 0">Нет планировок. Добавьте первую.</div>'; return; }
+    list.innerHTML = data.layouts.map(l=>`
+      <div id="layout-row-${l.id}" style="display:flex;gap:8px;align-items:center;border:1px solid var(--l);border-radius:8px;padding:8px;margin-bottom:6px;background:#fff">
+        <input value="${esc(l.name)}" data-lid="${l.id}" data-field="name" style="flex:1;padding:6px 8px;border:1px solid var(--l);border-radius:6px" onchange="updateLayoutField(${l.id},this)">
+        <input type="number" value="${Number(l.price_modifier||0)}" data-lid="${l.id}" data-field="price" style="width:110px;padding:6px 8px;border:1px solid var(--l);border-radius:6px" onchange="updateLayoutField(${l.id},this)">
+        <span style="font-size:11px;color:var(--m)">₽</span>
+        <button class="btn" style="padding:4px 8px;font-size:12px;color:#ef4444;border-color:#fecaca" onclick="deleteLayout(${l.id})">Удалить</button>
+      </div>`).join('');
+  });
+}
+function updateLayoutField(id, input){
+  const row = document.getElementById('layout-row-'+id);
+  if(!row) return;
+  const name = row.querySelector('[data-field="name"]').value.trim();
+  const price = parseFloat(row.querySelector('[data-field="price"]').value)||0;
+  if(!name){ $('layoutsError').textContent='Название не может быть пустым'; return; }
+  layoutsApi('update_layout',{id,name,price_modifier:price}).then(d=>{
+    if(!d.ok) $('layoutsError').textContent = d.error||'Ошибка сохранения';
+    else $('layoutsError').textContent='';
+  });
+}
+function deleteLayout(id){
+  if(!confirm('Удалить эту планировку?')) return;
+  layoutsApi('delete_layout',{id}).then(d=>{ if(d.ok) loadLayoutsList(); else $('layoutsError').textContent=d.error||'Ошибка удаления'; });
+}
+function addLayout(){
+  const name = $('newLayoutName').value.trim();
+  const price = parseFloat($('newLayoutPrice').value)||0;
+  if(!name||!layoutsModelId){ $('layoutsError').textContent='Введите название'; return; }
+  layoutsApi('create_layout',{model_id:layoutsModelId,name,price_modifier:price}).then(d=>{
+    if(d.ok){ $('newLayoutName').value=''; $('newLayoutPrice').value='0'; loadLayoutsList(); $('layoutsError').textContent=''; }
+    else $('layoutsError').textContent = d.error||'Ошибка создания';
+  });
+}
+
 boot().then(()=>{
   try{
     const savedStateRaw = localStorage.getItem('bath_admin_state');
