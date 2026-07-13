@@ -5,7 +5,7 @@ export async function POST(req: NextRequest) {
   try {
     const { email, password } = await req.json()
     if (!email || !password) {
-      return NextResponse.json({ ok: false, error: 'Укажите email и пароль' }, { status: 400 })
+      return NextResponse.json({ ok: false, error: 'Заполните все поля' }, { status: 400 })
     }
 
     const user = findUserByEmail(email)

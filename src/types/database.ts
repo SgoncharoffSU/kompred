@@ -37,6 +37,7 @@ export interface Option {
   name: string
   price_modifier: number
   image_url: string
+  image_crop?: string | null
   description: string
   is_default: boolean
   created_at: string

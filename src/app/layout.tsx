@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { Manrope } from 'next/font/google'
+import { ThemeProvider } from '@/components/ThemeProvider'
 import '@/styles/globals.css'
 
 const manrope = Manrope({
@@ -10,12 +11,23 @@ const manrope = Manrope({
 })
 
 export const metadata: Metadata = {
-  title: 'Конфигуратор бани',
-  description: 'Создайте идеальную конфигурацию и рассчитайте стоимость вашей бани',
+  title: 'Конфигуратор коммерческих предложений',
+  description: 'Выберите модель, планировку и комплектацию — получите персональный расчёт за минуту',
   icons: {
-    icon: '/favicon.ico',
+    icon: '/icon.png',
+    apple: '/icon.png',
   },
 }
+
+const themeInitScript = `
+  (function(){
+    try {
+      var t = localStorage.getItem('kp-theme');
+      if (!t) t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      if (t === 'dark') document.documentElement.classList.add('dark');
+    } catch(e){}
+  })()
+`
 
 export default function RootLayout({
   children,
@@ -24,7 +36,12 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ru" className={manrope.variable}>
-      <body className="font-sans">{children}</body>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+      </head>
+      <body className="font-sans">
+        <ThemeProvider>{children}</ThemeProvider>
+      </body>
     </html>
   )
 }
