@@ -442,10 +442,10 @@ function WorkspaceLogo({
 
   if (!logoLightUrl && !logoDarkUrl) {
     return (
-      <div className={isLarge ? 'flex items-center gap-3 rounded-2xl bg-white dark:bg-[#252119] p-2 shadow-lg ring-1 ring-black/5' : 'flex items-center gap-2'}>
+      <div className="flex items-center gap-2">
         <div
           className={`shrink-0 flex items-center justify-center rounded-lg bg-[#0d5a52] font-black text-white ${
-            isLarge ? 'h-16 w-16 text-lg' : 'h-8 w-8 text-[9px]'
+            isLarge ? 'h-12 w-12 text-sm' : 'h-8 w-8 text-[9px]'
           }`}
         >
           КП
@@ -455,10 +455,10 @@ function WorkspaceLogo({
     )
   }
 
-  const imgClassName = isLarge ? 'h-20 w-auto rounded-xl' : 'h-10 w-auto'
-  const imgStyle = { maxWidth: isLarge ? 220 : 140, objectFit: 'contain' as const }
+  const imgClassName = isLarge ? 'h-14 w-auto' : 'h-10 w-auto'
+  const imgStyle = { maxWidth: isLarge ? 160 : 140, objectFit: 'contain' as const, filter: isLarge ? 'drop-shadow(0 2px 6px rgba(0,0,0,0.25))' : undefined }
 
-  const images = (
+  return (
     <>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={logoLightUrl || logoDarkUrl} alt={workspaceName || 'Логотип'} className={`${imgClassName} dark:hidden`} style={imgStyle} />
@@ -466,10 +466,6 @@ function WorkspaceLogo({
       <img src={logoDarkUrl || logoLightUrl} alt={workspaceName || 'Логотип'} className={`${imgClassName} hidden dark:block`} style={imgStyle} />
     </>
   )
-
-  if (!isLarge) return images
-
-  return <div className="rounded-2xl bg-white dark:bg-[#252119] p-2 shadow-lg ring-1 ring-black/5">{images}</div>
 }
 
 // ── Modals ───────────────────────────────────────────────────────────────────
