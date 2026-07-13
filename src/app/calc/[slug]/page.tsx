@@ -1,4 +1,4 @@
-import { PrintButton, ShareButton } from './print-button'
+﻿import { PrintButton } from './print-button'
 
 const PHP_STATIC_BASE = 'http://159.194.225.55:8080'
 
@@ -92,12 +92,14 @@ export default async function OfferPage({ params }: { params: { slug: string } }
 
   return (
     <main className="min-h-screen bg-[#f2ece4] px-4 py-8 md:px-8">
-      <div id="pdf-content" className="mx-auto max-w-2xl space-y-4">
+      <div className="mx-auto max-w-2xl space-y-4">
 
         {/* Brand mark */}
-        <div className="mb-2 px-1">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo.png" alt="Сиберия" className="h-20 w-auto" style={{ mixBlendMode: 'multiply' }} />
+        <div className="mb-2 flex items-center gap-2 px-1">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#0d5a52] text-base">
+            🛁
+          </div>
+          <span className="text-sm font-bold text-[#1a1612]">Баня-конфигуратор</span>
         </div>
 
         {/* Hero photo */}
@@ -188,8 +190,7 @@ export default async function OfferPage({ params }: { params: { slug: string } }
           {offer.selected_options.length === 0 && (
             <p className="mt-2 text-xs opacity-40">Базовая комплектация, без дополнительных опций</p>
           )}
-          <div className="mt-5 flex flex-wrap gap-2">
-            <ShareButton />
+          <div className="mt-5">
             <PrintButton />
           </div>
         </div>

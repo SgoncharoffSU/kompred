@@ -14,8 +14,9 @@ const PHP_STATIC_BASE = 'http://159.194.225.55:8080'
 
 function normalizeImageUrl(url: string): string {
   if (!url) return ''
-  if (url.startsWith('http://') || url.startsWith('https://')) return url
-  return `${PHP_STATIC_BASE}${url.startsWith('/') ? '' : '/'}${url}`
+  if (url.startsWith('https://')) return url
+  const full = url.startsWith('http://') ? url : `${PHP_STATIC_BASE}${url.startsWith('/') ? '' : '/'}${url}`
+  return `/api/img-proxy?url=${encodeURIComponent(full)}`
 }
 
 function adaptModel(m: PhpModel): Model {

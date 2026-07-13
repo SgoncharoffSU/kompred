@@ -10,11 +10,10 @@ const manrope = Manrope({
 })
 
 export const metadata: Metadata = {
-  title: 'Сиберия — Конфигуратор бани',
-  description: 'Выберите модель, планировку и комплектацию — получите персональный расчёт за минуту',
+  title: 'Конфигуратор бани',
+  description: 'Создайте идеальную конфигурацию и рассчитайте стоимость вашей бани',
   icons: {
-    icon: '/icon.png',
-    apple: '/icon.png',
+    icon: '/favicon.ico',
   },
 }
 

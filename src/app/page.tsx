@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { phpCalculationService, phpLayoutService, phpModelService, phpOptionGroupService, phpOptionService } from '@/services/php-api'
 import { Layout, Model, Option, OptionGroup } from '@/types/database'
 
+type UserInfo = { email: string; workspace_name: string; use_php: boolean }
+
 type OptionsByGroup = Record<string, Option[]>
 type SelectionMap = Record<string, string[]>
 type CropRect = { x: number; y: number; w: number; h: number }
@@ -73,6 +75,7 @@ function Skeleton({ className = '' }: { className?: string }) {
 }
 
 export default function HomePage() {
+  const [user, setUser] = useState<UserInfo | null>(null)
   const [models, setModels] = useState<Model[]>([])
   const [selectedModelId, setSelectedModelId] = useState('')
   const [layouts, setLayouts] = useState<Layout[]>([])
@@ -85,6 +88,10 @@ export default function HomePage() {
   const [offerLink, setOfferLink] = useState('')
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    fetch('/api/auth/me').then(r => r.json()).then(d => { if (d.ok) setUser(d.user) })
+  }, [])
 
   useEffect(() => {
     const loadModels = async () => {
@@ -235,6 +242,20 @@ export default function HomePage() {
           <div className="text-xs text-[#7a6f66] leading-snug">
             Конфигуратор бани<br />
             <span className="text-[#1a1612] font-semibold">Персональное предложение</span>
+          </div>
+          <div className="ml-auto flex items-center gap-3">
+            {user && (
+              <span className="hidden sm:block text-xs text-[#7a6f66]">{user.email}</span>
+            )}
+            <button
+              onClick={async () => {
+                await fetch('/api/auth/logout', { method: 'POST' })
+                window.location.href = '/login'
+              }}
+              className="rounded-lg border border-[#e0d5c9] px-3 py-1.5 text-xs font-medium text-[#7a6f66] hover:border-[#0d5a52] hover:text-[#0d5a52] transition-all"
+            >
+              Выйти
+            </button>
           </div>
         </div>
       </header>
