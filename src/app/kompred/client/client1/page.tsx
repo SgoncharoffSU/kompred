@@ -18,6 +18,7 @@ interface ClientModel {
   name: string
   slogan: string
   image_url: string
+  image_crop: string | null
   base_price: number
   status: 'active' | 'draft'
   created_at: string
@@ -86,11 +87,22 @@ interface DeliveryConfig {
   option_rules: { option_id: string; label: string; base_price?: number; price_per_km?: number }[]
 }
 
+interface InclusionSection {
+  id: string
+  name: string
+  items: string[]
+  model_ids?: string[] | null
+}
+
 interface PopupBlock {
   id: string
   type: 'inclusion'
   title: string
-  data: { sections: { id: string; name: string; items: string[] }[] }
+  data: { sections: InclusionSection[] }
+}
+
+function sectionsForModel(sections: InclusionSection[], modelId: string): InclusionSection[] {
+  return sections.filter((s) => !s.model_ids || s.model_ids.length === 0 || s.model_ids.includes(modelId))
 }
 
 interface ContactBlock {
@@ -106,6 +118,16 @@ type PendingConflict = {
   optionName: string
   reasonIds: string[]
   reasonPhrases: string[]
+}
+
+function parseCropSafe(raw: string | null | undefined): CropRect | null {
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed.x === 'number' ? parsed : null
+  } catch {
+    return null
+  }
 }
 
 // ── Raw PHP shapes ───────────────────────────────────────────────────────────
@@ -125,6 +147,7 @@ function adaptModel(m: any): ClientModel {
     name: m.name,
     slogan: '',
     image_url: normalizeImageUrl(m.image_url || ''),
+    image_crop: m.image_crop || null,
     base_price: Number(m.base_price),
     status: 'active',
     created_at: '',
@@ -455,8 +478,8 @@ function WorkspaceLogo({
     )
   }
 
-  const imgClassName = isLarge ? 'h-14 w-auto' : 'h-10 w-auto'
-  const imgStyle = { maxWidth: isLarge ? 160 : 140, objectFit: 'contain' as const, filter: isLarge ? 'drop-shadow(0 2px 6px rgba(0,0,0,0.25))' : undefined }
+  const imgClassName = isLarge ? 'h-28 w-auto' : 'h-10 w-auto'
+  const imgStyle = { maxWidth: isLarge ? 280 : 140, objectFit: 'contain' as const, filter: isLarge ? 'drop-shadow(0 2px 6px rgba(0,0,0,0.25))' : undefined }
 
   return (
     <>
@@ -470,7 +493,7 @@ function WorkspaceLogo({
 
 // ── Modals ───────────────────────────────────────────────────────────────────
 
-function InclusionPopup({ title, sections, onClose }: { title: string; sections: { id: string; name: string; items: string[] }[]; onClose: () => void }) {
+function InclusionPopup({ title, sections, onClose }: { title: string; sections: InclusionSection[]; onClose: () => void }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const toggle = (id: string) =>
     setExpanded((prev) => {
@@ -905,6 +928,8 @@ function ClassicDesign(props: DesignProps) {
                     if (row.kind === 'popup') {
                       const block = popupBlocks.find((b) => b.id === row.group.id)
                       if (!block) return null
+                      const visibleSections = block.type === 'inclusion' ? sectionsForModel(block.data.sections, selectedModelId) : []
+                      if (block.type === 'inclusion' && visibleSections.length === 0) return null
                       return (
                         <div key={row.group.id} className="overflow-hidden rounded-2xl border border-[#e0d5c9] dark:border-[#38322a] bg-white dark:bg-[#252119] shadow-card">
                           <div className="px-5 py-4">
@@ -922,7 +947,7 @@ function ClassicDesign(props: DesignProps) {
                                 <div className="text-sm font-semibold text-[#1a1612] dark:text-[#ede7de]">{block.title}</div>
                                 {block.type === 'inclusion' && (
                                   <div className="mt-0.5 text-xs text-[#7a6f66] dark:text-[#9a8f87]">
-                                    {block.data.sections.length > 0 ? `${block.data.sections.length} разделов` : 'Открыть'}
+                                    {visibleSections.length > 0 ? `${visibleSections.length} разделов` : 'Открыть'}
                                   </div>
                                 )}
                               </div>
@@ -1311,8 +1336,9 @@ function ClassicDesign(props: DesignProps) {
                 <div className="relative overflow-hidden rounded-2xl shadow-card">
                   {previewImageUrl ? (
                     <>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img key={previewImageUrl} src={previewImageUrl} alt={selectedModel?.name ?? ''} className="aspect-square w-full object-cover transition-opacity duration-500" />
+                      <div key={previewImageUrl} className="aspect-square w-full transition-opacity duration-500">
+                        <CroppedImage src={previewImageUrl} crop={parseCropSafe(selectedModel?.image_crop)} className="aspect-square w-full object-cover" />
+                      </div>
                       <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/30 to-transparent px-5 pb-5 pt-16">
                         {workspaceName && <div className="text-[10px] font-semibold uppercase tracking-widest text-white/50">{workspaceName}</div>}
                         {selectedModel && <div className="mt-0.5 text-lg font-bold leading-tight text-white">{selectedModel.name}</div>}
@@ -1938,7 +1964,7 @@ export default function ClientPage() {
     <>
       <ClassicDesign {...designProps} />
       {activePopupBlock?.type === 'inclusion' && (
-        <InclusionPopup title={activePopupBlock.title} sections={activePopupBlock.data.sections} onClose={() => setOpenPopupId(null)} />
+        <InclusionPopup title={activePopupBlock.title} sections={sectionsForModel(activePopupBlock.data.sections, selectedModelId)} onClose={() => setOpenPopupId(null)} />
       )}
       {pendingConflict && (
         <ConflictDialog

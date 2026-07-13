@@ -21,6 +21,7 @@ interface AdminModel {
   id: string
   name: string
   image_url: string
+  image_crop: string | null
   base_price: string
   sort_order: number
 }
@@ -89,11 +90,18 @@ interface DeliveryConfig {
   option_rules: DeliveryRule[]
 }
 
+interface InclusionSection {
+  id: string
+  name: string
+  items: string[]
+  model_ids?: string[] | null
+}
+
 interface PopupBlock {
   id: string
   type: 'inclusion'
   title: string
-  data: { sections: { id: string; name: string; items: string[] }[] }
+  data: { sections: InclusionSection[] }
 }
 
 interface ContactBlock {
@@ -1416,14 +1424,15 @@ export default function AdminPage() {
     }
   }
 
-  const setModelImage = async (url: string) => {
+  const setModelImage = async (url: string, crop?: CropRect | null) => {
     if (!selectedModel) return
-    const res = await phpPost('update_model_image', { id: Number(selectedModel.id), image_url: url })
+    const cropJson = crop ? JSON.stringify(crop) : null
+    const res = await phpPost('update_model_image', { id: Number(selectedModel.id), image_url: url, image_crop: cropJson })
     if (!res.ok) {
       alert('Не удалось сохранить фото: ' + (res.error || 'ошибка сервера'))
       return
     }
-    setModels((prev) => prev.map((m) => (m.id === selectedModel.id ? { ...m, image_url: url } : m)))
+    setModels((prev) => prev.map((m) => (m.id === selectedModel.id ? { ...m, image_url: url, image_crop: cropJson } : m)))
   }
 
   const saveModelEdits = async () => {
@@ -2113,6 +2122,14 @@ export default function AdminPage() {
       await saveSections(sections.map((s) => (s.id === sectionId ? { ...s, items: s.items.map((it, i) => (i === idx ? v : it)) } : s)))
       setEditingItem(null)
     }
+    const toggleSectionModel = async (sectionId: string, modelId: string) => {
+      const section = sections.find((s) => s.id === sectionId)
+      if (!section) return
+      const current = section.model_ids ?? models.map((m) => m.id)
+      const next = current.includes(modelId) ? current.filter((id) => id !== modelId) : [...current, modelId]
+      const normalized = next.length >= models.length ? null : next
+      await saveSections(sections.map((s) => (s.id === sectionId ? { ...s, model_ids: normalized } : s)))
+    }
 
     return (
       <div className="mb-3 rounded-xl border border-slate-100 dark:border-[#2e2820] overflow-hidden">
@@ -2167,6 +2184,27 @@ export default function AdminPage() {
                       </div>
                       {isOpen && (
                         <div className="px-6 pb-2 pt-1">
+                          {models.length > 1 && (
+                            <div className="mb-2 flex flex-wrap items-center gap-1">
+                              <span className="mr-1 text-[10px] text-slate-400 dark:text-[#6a5f57]">Модели:</span>
+                              {models.map((m) => {
+                                const active = !section.model_ids || section.model_ids.includes(m.id)
+                                return (
+                                  <button
+                                    key={m.id}
+                                    type="button"
+                                    onClick={() => toggleSectionModel(section.id, m.id)}
+                                    className={`rounded-full border px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                                      active ? 'border-[#0d5a52]/30 bg-[#0d5a52]/10 text-[#0d5a52]' : 'border-transparent bg-slate-100 dark:bg-[#2a2520] text-slate-400 dark:text-[#6a5f57]'
+                                    }`}
+                                    title={active ? 'Показывается для этой модели — нажмите, чтобы скрыть' : 'Скрыто для этой модели — нажмите, чтобы показать'}
+                                  >
+                                    {m.name}
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          )}
                           <ul className="mb-2 space-y-0.5">
                             {section.items.map((item, idx) => {
                               const isEditing = editingItem?.secId === section.id && editingItem?.idx === idx
@@ -2451,23 +2489,37 @@ export default function AdminPage() {
             <div className="mx-auto max-w-2xl space-y-5">
               <div className="overflow-hidden rounded-2xl border border-slate-100 dark:border-[#2e2820] bg-white dark:bg-[#252119] shadow-sm">
                 <div className="flex flex-col sm:flex-row gap-4 p-4 lg:p-5">
-                  <button
-                    onClick={() => !isLocked && openMediaPicker((url) => setModelImage(url))}
-                    className={`group relative h-36 w-full sm:w-52 sm:shrink-0 overflow-hidden rounded-xl border-2 border-dashed border-slate-200 dark:border-[#3a312a] bg-slate-50 dark:bg-[#1f1c16] transition-colors ${isLocked ? 'cursor-not-allowed' : 'hover:border-[#0d5a52]'}`}
-                  >
+                  <div className="group relative h-36 w-full sm:w-52 sm:shrink-0 overflow-hidden rounded-xl border-2 border-dashed border-slate-200 dark:border-[#3a312a] bg-slate-50 dark:bg-[#1f1c16]">
                     {selectedModel.image_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={normalizeImageUrl(selectedModel.image_url)} alt={selectedModel.name} className="h-full w-full object-cover" />
+                      <RepositionableImage
+                        src={selectedModel.image_url}
+                        crop={parseCropSafe(selectedModel.image_crop)}
+                        alt={selectedModel.name}
+                        onReposition={(x, y) => setModelImage(selectedModel.image_url, { x, y, w: 100, h: 100, mode: 'position' })}
+                        onChangePicker={() => openMediaPicker((url, crop) => setModelImage(url, crop ?? null), true)}
+                        onCropEditor={() =>
+                          setCropEditorState({
+                            open: true,
+                            imageUrl: selectedModel.image_url,
+                            initialCrop: parseCropSafe(selectedModel.image_crop),
+                            onConfirm: (crop) => {
+                              setModelImage(selectedModel.image_url, crop)
+                              setCropEditorState({ open: false, imageUrl: '' })
+                            },
+                          })
+                        }
+                      />
                     ) : (
-                      <div className="flex h-full flex-col items-center justify-center gap-1 text-slate-300 dark:text-[#4a4038]">
+                      <button
+                        onClick={() => !isLocked && openMediaPicker((url, crop) => setModelImage(url, crop ?? null), true)}
+                        disabled={isLocked}
+                        className={`flex h-full w-full flex-col items-center justify-center gap-1 text-slate-300 dark:text-[#4a4038] transition-colors ${isLocked ? 'cursor-not-allowed' : 'hover:border-[#0d5a52]'}`}
+                      >
                         <span className="text-4xl">🖼</span>
                         <span className="text-xs">Нажмите для выбора</span>
-                      </div>
+                      </button>
                     )}
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
-                      <span className="rounded-lg bg-white/20 px-3 py-1.5 text-xs font-bold text-white backdrop-blur-sm">Изменить фото</span>
-                    </div>
-                  </button>
+                  </div>
                   <div className="flex min-w-0 flex-1 flex-col gap-3">
                     {editingModel ? (
                       <>
