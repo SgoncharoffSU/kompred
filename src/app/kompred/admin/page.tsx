@@ -35,6 +35,7 @@ interface AdminGroup {
   parent_group_id: string | null
   required: string
   enlarge_photo: string
+  model_ids: number[] | null
 }
 
 interface PopupChoice {
@@ -59,6 +60,8 @@ interface AdminOption {
   active_model_ids: number[]
   sort_order: number
   max_quantity: number
+  max_length: number
+  max_width: number
   model_photos: Record<string, { image_url: string; image_crop: string | null }>
 }
 
@@ -1237,6 +1240,8 @@ export default function AdminPage() {
   const [editOptionIsDefault, setEditOptionIsDefault] = useState(false)
   const [editOptionDescription, setEditOptionDescription] = useState('')
   const [editOptionPopupChoices, setEditOptionPopupChoices] = useState<PopupChoice[]>([])
+  const [editOptionMaxLength, setEditOptionMaxLength] = useState(0)
+  const [editOptionMaxWidth, setEditOptionMaxWidth] = useState(0)
   const [savingOption, setSavingOption] = useState(false)
 
   const [deleteOptionConfirm, setDeleteOptionConfirm] = useState<{ optionId: string; name: string } | null>(null)
@@ -1552,7 +1557,7 @@ export default function AdminPage() {
     setCreatingBlock(true)
     const res = await phpPost('create_group', { name, sort_order: 0, block_type: blockType, ...(parentGroupId ? { parent_group_id: Number(parentGroupId) } : {}) })
     if (res.ok && res.id) {
-      const newGroup: AdminGroup = { id: String(res.id), name, sort_order: '0', selection_type: 'multiple', block_type: blockType, parent_group_id: parentGroupId ?? null, required: '1', enlarge_photo: '0' }
+      const newGroup: AdminGroup = { id: String(res.id), name, sort_order: '0', selection_type: 'multiple', block_type: blockType, parent_group_id: parentGroupId ?? null, required: '1', enlarge_photo: '0', model_ids: null }
       if (parentGroupId) {
         const reordered = [...groups.filter((g) => g.parent_group_id === parentGroupId).sort((a, b) => Number(a.sort_order) - Number(b.sort_order)), newGroup].map((g, i) => ({ ...g, sort_order: String(i) }))
         setGroups((prev) => [...prev.filter((g) => g.parent_group_id !== parentGroupId), ...reordered])
@@ -1613,6 +1618,34 @@ export default function AdminPage() {
     await loadAll(selectedModelId)
   }
 
+  const [duplicatingGroupId, setDuplicatingGroupId] = useState<string | null>(null)
+
+  const toggleGroupModels = async (groupId: string, modelId: string) => {
+    const group = groups.find((g) => g.id === groupId)
+    if (!group) return
+    const current = group.model_ids ?? models.map((m) => Number(m.id))
+    const mid = Number(modelId)
+    const next = current.includes(mid) ? current.filter((id) => id !== mid) : [...current, mid]
+    const normalized = next.length >= models.length ? null : next
+    await phpPost('update_group_models', { id: Number(groupId), model_ids: normalized })
+    setGroups((prev) => prev.map((g) => (g.id === groupId ? { ...g, model_ids: normalized } : g)))
+  }
+
+  const duplicateGroup = async (groupId: string, name: string) => {
+    if (!confirm(`Скопировать блок «${name}» вместе со всеми его опциями?`)) return
+    setDuplicatingGroupId(groupId)
+    try {
+      const res = await phpPost('duplicate_group', { id: Number(groupId) })
+      if (!res.ok) {
+        alert(res.error || 'Ошибка копирования блока.')
+        return
+      }
+      await loadAll(selectedModelId)
+    } finally {
+      setDuplicatingGroupId(null)
+    }
+  }
+
   const mergeBlocks = async () => {
     const name = mergeName.trim()
     if (!name || mergeSelectedIds.size < 2 || merging) return
@@ -1662,6 +1695,8 @@ export default function AdminPage() {
           active_model_ids: [mid],
           sort_order: sortOrder,
           max_quantity: 1,
+          max_length: 0,
+          max_width: 0,
           model_photos: {},
         },
       ])
@@ -1680,6 +1715,8 @@ export default function AdminPage() {
     setEditOptionIsDefault(!!Number(option.is_default))
     setEditOptionDescription(option.description || '')
     setEditOptionPopupChoices((option.popup_options || []).map((c) => ({ ...c, price: String(c.price) })))
+    setEditOptionMaxLength(option.max_length || 0)
+    setEditOptionMaxWidth(option.max_width || 0)
   }
 
   const saveEditOption = async () => {
@@ -1687,6 +1724,8 @@ export default function AdminPage() {
     setSavingOption(true)
     const choicesForState = editOptionPopupChoices.length > 0 ? editOptionPopupChoices : null
     const choicesForApi = choicesForState ? choicesForState.map((c) => ({ id: c.id, name: c.name, price: Number(c.price), image_url: c.image_url })) : null
+    const maxLength = Math.max(0, Math.round(editOptionMaxLength))
+    const maxWidth = Math.max(0, Math.round(editOptionMaxWidth))
     await phpPost('update_option_json', {
       id: Number(editingOptionId),
       name: editOptionName.trim(),
@@ -1695,11 +1734,23 @@ export default function AdminPage() {
       is_default: editOptionIsDefault ? 1 : 0,
       description: editOptionDescription.trim(),
       popup_options: choicesForApi,
+      max_length: maxLength,
+      max_width: maxWidth,
     })
     setOptions((prev) =>
       prev.map((o) =>
         o.id === editingOptionId
-          ? { ...o, name: editOptionName.trim(), price: editOptionPrice, base_price: editOptionBasePrice, is_default: editOptionIsDefault, description: editOptionDescription.trim(), popup_options: choicesForState }
+          ? {
+              ...o,
+              name: editOptionName.trim(),
+              price: editOptionPrice,
+              base_price: editOptionBasePrice,
+              is_default: editOptionIsDefault,
+              description: editOptionDescription.trim(),
+              popup_options: choicesForState,
+              max_length: maxLength,
+              max_width: maxWidth,
+            }
           : o
       )
     )
@@ -1880,6 +1931,19 @@ export default function AdminPage() {
                     />
                   )}
                 </div>
+                {children.length === 0 && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      if (!isLocked) duplicateGroup(group.id, group.name)
+                    }}
+                    disabled={isLocked || duplicatingGroupId === group.id}
+                    className="mr-1 rounded-lg px-1.5 py-0.5 text-xs text-slate-300 dark:text-[#4a4038] hover:bg-slate-100 dark:hover:bg-[#2a2520] hover:text-slate-500 disabled:opacity-30 disabled:cursor-not-allowed"
+                    title="Копировать блок вместе с его опциями"
+                  >
+                    {duplicatingGroupId === group.id ? '…' : '⧉'}
+                  </button>
+                )}
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
@@ -1896,6 +1960,28 @@ export default function AdminPage() {
               {isOpen && (
                 <div className="px-5 pb-5">
                   {children.length > 0 && <p className="mb-3 rounded-lg bg-slate-50 dark:bg-[#1f1c16] px-3 py-2 text-xs text-slate-400 dark:text-[#6a5f57]">Это блок-обёртка для вложенных блоков ниже — опции сюда не добавляются напрямую.</p>}
+
+                  {models.length > 1 && (
+                    <div className="mb-3 flex flex-wrap items-center gap-1">
+                      <span className="mr-1 text-[10px] text-slate-400 dark:text-[#6a5f57]">Модели:</span>
+                      {models.map((m) => {
+                        const active = !group.model_ids || group.model_ids.includes(Number(m.id))
+                        return (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => toggleGroupModels(group.id, m.id)}
+                            className={`rounded-full border px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                              active ? 'border-[#0d5a52]/30 bg-[#0d5a52]/10 text-[#0d5a52]' : 'border-transparent bg-slate-100 dark:bg-[#2a2520] text-slate-400 dark:text-[#6a5f57]'
+                            }`}
+                            title={active ? 'Блок показывается для этой модели — нажмите, чтобы скрыть' : 'Блок скрыт для этой модели — нажмите, чтобы показать'}
+                          >
+                            {m.name}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
 
                   {children.length === 0 && group.block_type === 'delivery' && (
                     <DeliveryConfigEditor
@@ -2042,6 +2128,7 @@ export default function AdminPage() {
               <span className="absolute bottom-1.5 left-1.5 rounded-full bg-violet-600/90 px-1.5 py-0.5 text-[9px] font-medium text-white">{option.popup_options.length} вар.</span>
             )}
             {option.max_quantity > 1 && <span className="absolute bottom-1.5 right-1.5 rounded-full bg-slate-700/80 px-1.5 py-0.5 text-[9px] font-medium text-white">×{option.max_quantity}</span>}
+            {(option.max_length > 0 || option.max_width > 0) && <span className="absolute bottom-1.5 right-1.5 rounded-full bg-amber-700/85 px-1.5 py-0.5 text-[9px] font-medium text-white">Д×Ш, ₽/м²</span>}
             <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/20 transition-all duration-200">
               <span className="opacity-0 group-hover:opacity-100 transition-opacity text-white text-xs font-semibold drop-shadow">Открыть</span>
             </div>
@@ -2805,7 +2892,9 @@ export default function AdminPage() {
                       </div>
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-[#9a8f87]">Цена за единицу, ₽</label>
+                          <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-[#9a8f87]">
+                            {editOptionMaxLength > 0 || editOptionMaxWidth > 0 ? 'Цена за м² (длина×ширина), ₽' : 'Цена за единицу, ₽'}
+                          </label>
                           <input type="number" value={editOptionPrice} onChange={(e) => setEditOptionPrice(e.target.value)} className="w-full rounded-lg border border-slate-200 dark:border-[#3a312a] bg-white dark:bg-[#1a1612] px-3 py-2 text-sm text-slate-800 dark:text-[#e8e2d9] focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                         </div>
                         <div>
@@ -2815,6 +2904,37 @@ export default function AdminPage() {
                           <input type="number" value={editOptionBasePrice} onChange={(e) => setEditOptionBasePrice(e.target.value)} className="w-full rounded-lg border border-slate-200 dark:border-[#3a312a] bg-white dark:bg-[#1a1612] px-3 py-2 text-sm text-slate-800 dark:text-[#e8e2d9] focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                         </div>
                       </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-[#9a8f87]" title="Максимальная длина, которую клиент сможет выбрать бегунком. Оставьте 0, чтобы не показывать этот бегунок.">
+                            Макс. длина, м (0 — выкл.)
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            value={editOptionMaxLength}
+                            onChange={(e) => setEditOptionMaxLength(Math.max(0, Math.round(Number(e.target.value) || 0)))}
+                            className="w-full rounded-lg border border-slate-200 dark:border-[#3a312a] bg-white dark:bg-[#1a1612] px-3 py-2 text-sm text-slate-800 dark:text-[#e8e2d9] focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-[#9a8f87]" title="Максимальная ширина, которую клиент сможет выбрать бегунком. Оставьте 0, чтобы не показывать этот бегунок.">
+                            Макс. ширина, м (0 — выкл.)
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            value={editOptionMaxWidth}
+                            onChange={(e) => setEditOptionMaxWidth(Math.max(0, Math.round(Number(e.target.value) || 0)))}
+                            className="w-full rounded-lg border border-slate-200 dark:border-[#3a312a] bg-white dark:bg-[#1a1612] px-3 py-2 text-sm text-slate-800 dark:text-[#e8e2d9] focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          />
+                        </div>
+                      </div>
+                      {(editOptionMaxLength > 0 || editOptionMaxWidth > 0) && (
+                        <p className="rounded-lg bg-amber-50 dark:bg-amber-900/15 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+                          Клиент будет выбирать {editOptionMaxLength > 0 && editOptionMaxWidth > 0 ? 'длину и ширину' : editOptionMaxLength > 0 ? 'длину' : 'ширину'} бегунком, и итоговая цена опции рассчитается как «Цена за м²» × длина × ширина.
+                        </p>
+                      )}
                       <label className="flex cursor-pointer items-center gap-2.5 select-none">
                         <input type="checkbox" checked={editOptionIsDefault} onChange={(e) => setEditOptionIsDefault(e.target.checked)} className="h-4 w-4 rounded accent-emerald-600" />
                         <span className="text-sm text-slate-600 dark:text-[#b5afa7]">По умолчанию выбрана</span>

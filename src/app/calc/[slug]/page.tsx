@@ -12,7 +12,10 @@ type SelectedOption = {
   id: string
   group_name: string
   name: string
-  price_modifier: number
+  line_total: number
+  qty: number
+  length: number | null
+  width: number | null
   image_url: string
 }
 
@@ -42,13 +45,18 @@ async function getCalculation(slug: string): Promise<OfferData | null> {
       model_name: data.model_name || 'Модель',
       model_image_url: normalizeUrl(data.model_image_url || ''),
       layout_name: data.layout_name || '',
-      selected_options: (data.selected_options || []).map((o: { id: number; name: string; price: number; group_name: string; image_url?: string }) => ({
-        id: String(o.id),
-        name: o.name,
-        price_modifier: Number(o.price),
-        group_name: o.group_name,
-        image_url: normalizeUrl(o.image_url || ''),
-      })),
+      selected_options: (data.selected_options || []).map(
+        (o: { id: number; name: string; group_name: string; image_url?: string; line_total?: number; qty?: number; length?: number; width?: number }) => ({
+          id: String(o.id),
+          name: o.name,
+          line_total: Number(o.line_total ?? 0),
+          qty: Number(o.qty ?? 1),
+          length: o.length ? Number(o.length) : null,
+          width: o.width ? Number(o.width) : null,
+          group_name: o.group_name,
+          image_url: normalizeUrl(o.image_url || ''),
+        })
+      ),
     }
   } catch {
     return null
@@ -166,11 +174,14 @@ export default async function OfferPage({ params }: { params: { slug: string } }
                     />
                   )}
                   <div className="min-w-0 flex-1">
-                    <div className="text-sm font-medium text-[#1a1612]">{item.name}</div>
+                    <div className="text-sm font-medium text-[#1a1612]">
+                      {item.name}
+                      {item.length && item.width ? ` (${item.length}×${item.width} м)` : item.qty > 1 ? ` × ${item.qty}` : ''}
+                    </div>
                     <div className="text-xs text-[#7a6f66]">{item.group_name}</div>
                   </div>
                   <div className="ml-auto shrink-0 text-sm font-semibold text-[#b87524]">
-                    {item.price_modifier > 0 ? '+' : ''}{formatPrice(item.price_modifier)}
+                    {item.line_total > 0 ? '+' : ''}{formatPrice(item.line_total)}
                   </div>
                 </div>
               ))}

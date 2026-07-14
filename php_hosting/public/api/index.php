@@ -218,6 +218,18 @@ $db->query("CREATE TABLE IF NOT EXISTS calculations (
     total_price DECIMAL(12,2) NOT NULL DEFAULT 0,
     fixed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )");
+$col_check = $db->query("SHOW COLUMNS FROM option_groups LIKE 'model_ids'");
+if ($col_check && $col_check->num_rows === 0) {
+    $db->query("ALTER TABLE option_groups ADD COLUMN model_ids TEXT DEFAULT NULL");
+}
+$col_check = $db->query("SHOW COLUMNS FROM options_catalog LIKE 'max_length'");
+if ($col_check && $col_check->num_rows === 0) {
+    $db->query("ALTER TABLE options_catalog ADD COLUMN max_length INT NOT NULL DEFAULT 0");
+}
+$col_check = $db->query("SHOW COLUMNS FROM options_catalog LIKE 'max_width'");
+if ($col_check && $col_check->num_rows === 0) {
+    $db->query("ALTER TABLE options_catalog ADD COLUMN max_width INT NOT NULL DEFAULT 0");
+}
 $seed_check = $db->query("SELECT COUNT(*) c FROM option_groups");
 if ($seed_check && intval($seed_check->fetch_assoc()['c']) === 0) {
     $db->query("INSERT INTO option_groups (id,name,sort_order) VALUES (1,'Кровля',1),(2,'Цвет бани',2),(3,'Двери',3),(4,'Окна',4)");
@@ -253,7 +265,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'bootstrap') {
             }
         }
     }
-    $res2 = $db->query('SELECT o.id,o.group_id,o.sort_order,IFNULL(g.name,\'??? ??????\') as group_name,o.name,o.image_url,o.image_crop,o.price,o.base_price,o.is_default,o.description,o.popup_options,o.features_json,o.max_quantity,o.created_at FROM options_catalog o LEFT JOIN option_groups g ON g.id=o.group_id ORDER BY COALESCE(g.sort_order,9999), o.sort_order ASC, o.id ASC');
+    $res2 = $db->query('SELECT o.id,o.group_id,o.sort_order,IFNULL(g.name,\'??? ??????\') as group_name,o.name,o.image_url,o.image_crop,o.price,o.base_price,o.is_default,o.description,o.popup_options,o.features_json,o.max_quantity,o.max_length,o.max_width,o.created_at FROM options_catalog o LEFT JOIN option_groups g ON g.id=o.group_id ORDER BY COALESCE(g.sort_order,9999), o.sort_order ASC, o.id ASC');
     while ($row = $res2->fetch_assoc()) {
         $row['features'] = $row['features_json'] ? json_decode($row['features_json'], true) : array();
         unset($row['features_json']);
@@ -265,8 +277,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'bootstrap') {
         $row['model_photos'] = isset($photo_overrides[$oid]) ? $photo_overrides[$oid] : new stdClass();
         $options[] = $row;
     }
-    $res3 = $db->query('SELECT id,name,sort_order,selection_type,parent_group_id,required,enlarge_photo,block_type,created_at FROM option_groups ORDER BY sort_order ASC, id ASC');
-    while ($row = $res3->fetch_assoc()) $groups[] = $row;
+    $res3 = $db->query('SELECT id,name,sort_order,selection_type,parent_group_id,required,enlarge_photo,block_type,model_ids,created_at FROM option_groups ORDER BY sort_order ASC, id ASC');
+    while ($row = $res3->fetch_assoc()) {
+        $row['model_ids'] = $row['model_ids'] ? json_decode($row['model_ids'], true) : null;
+        $groups[] = $row;
+    }
 
     $exclusions = array();
     $res5 = $db->query('SELECT id,a_type,a_id,b_type,b_id FROM exclusion_rules');
@@ -879,6 +894,67 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'update_group_parent') 
     json_out(array('ok' => true));
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'update_group_models') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    $id = intval(isset($data['id']) ? $data['id'] : 0);
+    if ($id <= 0) json_out(array('ok' => false, 'error' => 'id required'));
+    $model_ids = isset($data['model_ids']) && is_array($data['model_ids']) ? array_values(array_map('intval', $data['model_ids'])) : null;
+    $encoded = $model_ids === null ? null : json_encode($model_ids);
+    $stmt = $db->prepare('UPDATE option_groups SET model_ids=? WHERE id=?');
+    $stmt->bind_param('si', $encoded, $id);
+    if (!$stmt->execute()) json_out(array('ok' => false, 'error' => $db->error));
+    json_out(array('ok' => true));
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'duplicate_group') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    $src_id = intval(isset($data['id']) ? $data['id'] : 0);
+    if ($src_id <= 0) json_out(array('ok' => false, 'error' => 'id required'));
+
+    $db->begin_transaction();
+    try {
+        $r = $db->query("SELECT * FROM option_groups WHERE id=$src_id LIMIT 1");
+        $src = $r ? $r->fetch_assoc() : null;
+        if (!$src) throw new Exception('source not found');
+
+        $new_name = substr($src['name'], 0, 150) . ' — копия';
+        $stmt = $db->prepare('INSERT INTO option_groups (name,sort_order,selection_type,parent_group_id,required,enlarge_photo,block_type,model_ids) VALUES (?,?,?,?,?,?,?,?)');
+        $stmt->bind_param('sisiiiss', $new_name, $src['sort_order'], $src['selection_type'], $src['parent_group_id'], $src['required'], $src['enlarge_photo'], $src['block_type'], $src['model_ids']);
+        $stmt->execute();
+        $new_group_id = $db->insert_id;
+
+        $or = $db->query("SELECT * FROM options_catalog WHERE group_id=$src_id ORDER BY sort_order ASC");
+        if ($or) {
+            $os = $db->prepare('INSERT INTO options_catalog (group_id,name,image_url,image_crop,price,base_price,description,features_json,popup_options,is_default,sort_order,max_quantity,max_length,max_width) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+            while ($opt = $or->fetch_assoc()) {
+                $os->bind_param(
+                    'isssddsssiiiii',
+                    $new_group_id, $opt['name'], $opt['image_url'], $opt['image_crop'], $opt['price'], $opt['base_price'],
+                    $opt['description'], $opt['features_json'], $opt['popup_options'], $opt['is_default'], $opt['sort_order'],
+                    $opt['max_quantity'], $opt['max_length'], $opt['max_width']
+                );
+                $os->execute();
+                $new_option_id = $db->insert_id;
+
+                $avr = $db->query('SELECT model_id, is_active FROM option_model_availability WHERE option_id=' . intval($opt['id']));
+                if ($avr) {
+                    $avs = $db->prepare('INSERT IGNORE INTO option_model_availability (option_id,model_id,is_active) VALUES (?,?,?)');
+                    while ($av = $avr->fetch_assoc()) {
+                        $avs->bind_param('iii', $new_option_id, $av['model_id'], $av['is_active']);
+                        $avs->execute();
+                    }
+                }
+            }
+        }
+
+        $db->commit();
+        json_out(array('ok' => true, 'id' => $new_group_id, 'name' => $new_name));
+    } catch (Exception $e) {
+        $db->rollback();
+        json_out(array('ok' => false, 'error' => $e->getMessage()));
+    }
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'reorder_models') {
     $data = json_decode(file_get_contents('php://input'), true);
     $items = isset($data['items']) ? $data['items'] : array();
@@ -1047,11 +1123,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'create_option_json') {
     if ($name === '') json_out(array('ok' => false, 'error' => 'name required'));
     if ($group_id <= 0) json_out(array('ok' => false, 'error' => 'group_id required'));
     $max_quantity = isset($data['max_quantity']) ? max(1, intval($data['max_quantity'])) : 1;
+    $max_length = isset($data['max_length']) ? max(0, intval($data['max_length'])) : 0;
+    $max_width = isset($data['max_width']) ? max(0, intval($data['max_width'])) : 0;
     $base_price = isset($data['base_price']) ? floatval($data['base_price']) : 0;
     $is_default = (!empty($data['is_default'])) ? 1 : 0;
-    $stmt = $db->prepare('INSERT INTO options_catalog (group_id,name,image_url,price,description,features_json,max_quantity,base_price,is_default) VALUES (?,?,?,?,?,?,?,?,?)');
+    $stmt = $db->prepare('INSERT INTO options_catalog (group_id,name,image_url,price,description,features_json,max_quantity,max_length,max_width,base_price,is_default) VALUES (?,?,?,?,?,?,?,?,?,?,?)');
     $empty = ''; $features = '[]';
-    $stmt->bind_param('issdssidi', $group_id, $name, $image_url, $price, $empty, $features, $max_quantity, $base_price, $is_default);
+    $stmt->bind_param('issdssiiidi', $group_id, $name, $image_url, $price, $empty, $features, $max_quantity, $max_length, $max_width, $base_price, $is_default);
     $stmt->execute();
     $new_id = $db->insert_id;
     if ($model_id > 0) {
@@ -1076,6 +1154,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'update_option_json') {
         $set[] = 'max_quantity=?';
         $types .= 'i';
         $values[] = max(1, intval($data['max_quantity']));
+    }
+    if (isset($data['max_length'])) {
+        $set[] = 'max_length=?';
+        $types .= 'i';
+        $values[] = max(0, intval($data['max_length']));
+    }
+    if (isset($data['max_width'])) {
+        $set[] = 'max_width=?';
+        $types .= 'i';
+        $values[] = max(0, intval($data['max_width']));
     }
     if (isset($data['base_price'])) {
         $set[] = 'base_price=?';
@@ -1170,6 +1258,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'create_calculation') {
     }
     $total_price = floatval(isset($body['total_price']) ? $body['total_price'] : 0);
     $option_choices = (isset($body['option_choices']) && is_array($body['option_choices'])) ? $body['option_choices'] : array();
+    $option_dimensions = array();
+    if (isset($body['option_dimensions']) && is_array($body['option_dimensions'])) {
+        foreach ($body['option_dimensions'] as $oid => $dim) {
+            $oid = intval($oid);
+            if ($oid <= 0 || !is_array($dim)) continue;
+            $length = max(0, intval(isset($dim['length']) ? $dim['length'] : 0));
+            $width = max(0, intval(isset($dim['width']) ? $dim['width'] : 0));
+            if ($length <= 0 && $width <= 0) continue;
+            $option_dimensions[strval($oid)] = array('length' => $length, 'width' => $width);
+        }
+    }
     $account = isset($body['account']) ? preg_replace('/[^0-9]/', '', strval($body['account'])) : '';
     if ($model_id <= 0) json_out(array('ok' => false, 'error' => 'model_id required'));
     $slug = bin2hex(random_bytes(12));
@@ -1180,6 +1279,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'create_calculation') {
     $model_base_price = $model_bp_row ? floatval($model_bp_row['base_price']) : 0;
     $snapshot_data = array('model_id' => $model_id, 'layout_id' => $layout_id, 'selected_options' => $selected_options, 'base_price' => $model_base_price);
     if (!empty($option_choices)) $snapshot_data['option_choices'] = $option_choices;
+    if (!empty($option_dimensions)) $snapshot_data['option_dimensions'] = $option_dimensions;
     if ($account !== '') $snapshot_data['account'] = $account;
     $snapshot = json_encode($snapshot_data);
     $stmt = $db->prepare('INSERT INTO calculations (public_slug, config_snapshot, total_price) VALUES (?, ?, ?)');
@@ -1223,7 +1323,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'get_calculation') {
         $types = str_repeat('i', count($option_ids));
         // COALESCE onto the per-model photo override (if the seller set one for this model)
         // so the saved offer shows exactly the picture the buyer saw while configuring.
-        $stmt4 = $db->prepare("SELECT o.id, o.name, o.price, o.base_price, COALESCE(oma.image_url, o.image_url) as image_url, IFNULL(g.name,'Опция') as group_name
+        $stmt4 = $db->prepare("SELECT o.id, o.name, o.price, o.base_price, o.max_length, o.max_width, COALESCE(oma.image_url, o.image_url) as image_url, IFNULL(g.name,'Опция') as group_name
             FROM options_catalog o
             LEFT JOIN option_groups g ON g.id=o.group_id
             LEFT JOIN option_model_availability oma ON oma.option_id=o.id AND oma.model_id=$model_id
@@ -1233,6 +1333,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'get_calculation') {
         $stmt4->execute();
         $res = $stmt4->get_result();
         $snap_choices = isset($snapshot['option_choices']) && is_array($snapshot['option_choices']) ? $snapshot['option_choices'] : array();
+        $snap_dimensions = isset($snapshot['option_dimensions']) && is_array($snapshot['option_dimensions']) ? $snapshot['option_dimensions'] : array();
         while ($row = $res->fetch_assoc()) {
             $qty = $qty_by_id[intval($row['id'])];
             $row['qty'] = $qty;
@@ -1244,7 +1345,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'get_calculation') {
                 $choice_price = isset($ch['price']) ? floatval($ch['price']) : 0;
                 if ($choice_price > 0) $row['popup_choice_price'] = $choice_price;
             }
-            $row['line_total'] = floatval($row['base_price']) + floatval($row['price']) * $qty + $choice_price;
+            $is_dimension = intval($row['max_length']) > 0 || intval($row['max_width']) > 0;
+            if ($is_dimension && isset($snap_dimensions[$choice_key])) {
+                $dim = $snap_dimensions[$choice_key];
+                $length = max(0, intval(isset($dim['length']) ? $dim['length'] : 0));
+                $width = max(0, intval(isset($dim['width']) ? $dim['width'] : 0));
+                $row['length'] = $length;
+                $row['width'] = $width;
+                $row['line_total'] = floatval($row['base_price']) + floatval($row['price']) * $length * $width + $choice_price;
+            } else {
+                $row['line_total'] = floatval($row['base_price']) + floatval($row['price']) * $qty + $choice_price;
+            }
             $selected_options[] = $row;
         }
     }

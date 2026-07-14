@@ -46,6 +46,7 @@ interface ClientGroup {
   order_index: number
   parent_group_id: string | null
   block_type: 'options' | 'popup' | 'delivery' | 'contacts'
+  model_ids?: number[] | null
   created_at: string
   updated_at: string
 }
@@ -69,6 +70,8 @@ interface ClientOption {
   is_default: boolean
   popup_options: PopupChoice[]
   max_quantity: number
+  max_length: number
+  max_width: number
   created_at: string
   updated_at: string
 }
@@ -188,6 +191,8 @@ function adaptOption(raw: any, modelId?: string): ClientOption {
     is_default: !!Number(raw.is_default),
     popup_options: raw.popup_options || [],
     max_quantity: Number(raw.max_quantity || 1),
+    max_length: Number(raw.max_length || 0),
+    max_width: Number(raw.max_width || 0),
     created_at: '',
     updated_at: '',
   }
@@ -276,7 +281,8 @@ const groupService = {
       if ((g.block_type || 'options') !== 'options') includedIds.add(g.id)
     })
 
-    const filtered = allGroups.filter((g: any) => includedIds.has(g.id))
+    const modelAllowed = (g: any) => !g.model_ids || g.model_ids.length === 0 || g.model_ids.map(String).includes(modelId)
+    const filtered = allGroups.filter((g: any) => includedIds.has(g.id) && modelAllowed(g))
     const childrenByParent = new Map<any, any[]>()
     filtered.forEach((g: any) => {
       const parent = g.parent_group_id || 0
@@ -305,6 +311,7 @@ const groupService = {
         order_index: g.sort_order,
         parent_group_id: g.parent_group_id ? String(g.parent_group_id) : null,
         block_type: g.block_type || 'options',
+        model_ids: g.model_ids || null,
         created_at: '',
         updated_at: '',
       })
@@ -335,6 +342,7 @@ const calculationService = {
     selected_options: { id: string; qty: number }[]
     total_price: number
     option_choices?: Record<string, { name: string; price: number }>
+    option_dimensions?: Record<string, { length: number; width: number }>
     account?: string
   }): Promise<{ public_slug: string }> {
     const data = await phpPost('create_calculation', {
@@ -343,6 +351,7 @@ const calculationService = {
       selected_options: payload.selected_options.map((o) => ({ id: Number(o.id), qty: o.qty })),
       total_price: payload.total_price,
       ...(payload.option_choices && Object.keys(payload.option_choices).length > 0 ? { option_choices: payload.option_choices } : {}),
+      ...(payload.option_dimensions && Object.keys(payload.option_dimensions).length > 0 ? { option_dimensions: payload.option_dimensions } : {}),
       ...(payload.account ? { account: payload.account } : {}),
     })
     if (!data.ok || !data.public_slug) throw new Error(data.error || 'Failed to create calculation')
@@ -676,6 +685,7 @@ interface DesignProps {
   optionsByGroup: Record<string, ClientOption[]>
   selectedOptions: Record<string, string[]>
   quantities: Record<string, number>
+  dimensions: Record<string, { length: number; width: number }>
   disabledOptionIds: Set<string>
   loading: boolean
   saving: boolean
@@ -692,6 +702,7 @@ interface DesignProps {
   onLayoutChange: (id: string) => void
   toggleOption: (group: ClientGroup, optionId: string) => void
   setQuantity: (optionId: string, qty: number) => void
+  setOptionDimensions: (optionId: string, next: { length: number; width: number }) => void
   createOffer: () => void
   copyLink: () => void
   onEnlargePhoto: (url: string) => void
@@ -726,6 +737,7 @@ function ClassicDesign(props: DesignProps) {
     optionsByGroup,
     selectedOptions,
     quantities,
+    dimensions,
     disabledOptionIds,
     loading,
     saving,
@@ -742,6 +754,7 @@ function ClassicDesign(props: DesignProps) {
     onLayoutChange,
     toggleOption,
     setQuantity,
+    setOptionDimensions,
     createOffer,
     copyLink,
     onEnlargePhoto,
@@ -755,7 +768,9 @@ function ClassicDesign(props: DesignProps) {
   const [pendingPopupOption, setPendingPopupOption] = useState<{ option: ClientOption; group: ClientGroup } | null>(null)
 
   const handleOptionClick = (group: ClientGroup, option: ClientOption, isActive: boolean) => {
-    if (option.max_quantity > 1) {
+    if (option.max_length > 0 || option.max_width > 0) {
+      setOptionDimensions(option.id, isActive ? { length: 0, width: 0 } : { length: option.max_length > 0 ? 1 : 0, width: option.max_width > 0 ? 1 : 0 })
+    } else if (option.max_quantity > 1) {
       setQuantity(option.id, isActive ? 0 : 1)
     } else if (option.popup_options?.length && !isActive) {
       setPendingPopupOption({ option, group })
@@ -1064,16 +1079,57 @@ function ClassicDesign(props: DesignProps) {
                                       const isActive = (selectedOptions[group.id] || []).includes(option.id)
                                       const isDisabled = disabledOptionIds.has(option.id)
                                       const hasStepper = option.max_quantity > 1
+                                      const hasDimensions = option.max_length > 0 || option.max_width > 0
                                       const qty = quantities[option.id] ?? 0
+                                      const dim = dimensions[option.id] ?? { length: 0, width: 0 }
                                       const choice = selectedOptionChoices[option.id]
                                       const hasChoices = (option.popup_options?.length ?? 0) > 0
 
-                                      const priceLine = (
+                                      const priceLine = hasDimensions ? (
+                                        <>
+                                          {option.base_price > 0 && `+${fmt(option.base_price)} `}
+                                          {fmt(option.price_modifier)}/м²
+                                        </>
+                                      ) : (
                                         <>
                                           {option.base_price > 0 && `+${fmt(option.base_price)} `}
                                           {option.price_modifier > 0 ? '+' : ''}
                                           {fmt(option.price_modifier)}
                                         </>
+                                      )
+
+                                      const dimensionControls = (
+                                        <div className="mt-1.5 flex flex-col gap-1.5" onClick={(e) => e.stopPropagation()}>
+                                          {option.max_length > 0 && (
+                                            <div className="flex items-center gap-2">
+                                              <span className="w-10 shrink-0 text-[10px] text-[#7a6f66] dark:text-[#9a8f87]">Длина</span>
+                                              <input
+                                                type="range"
+                                                min={1}
+                                                max={option.max_length}
+                                                value={dim.length || 1}
+                                                onChange={(e) => setOptionDimensions(option.id, { length: Number(e.target.value), width: dim.width || (option.max_width > 0 ? 1 : 0) })}
+                                                className="h-1.5 flex-1 accent-[#0d5a52]"
+                                              />
+                                              <span className="w-10 shrink-0 text-right text-[10px] font-semibold text-[#1a1612] dark:text-[#ede7de]">{dim.length || 1} м</span>
+                                            </div>
+                                          )}
+                                          {option.max_width > 0 && (
+                                            <div className="flex items-center gap-2">
+                                              <span className="w-10 shrink-0 text-[10px] text-[#7a6f66] dark:text-[#9a8f87]">Ширина</span>
+                                              <input
+                                                type="range"
+                                                min={1}
+                                                max={option.max_width}
+                                                value={dim.width || 1}
+                                                onChange={(e) => setOptionDimensions(option.id, { length: dim.length || (option.max_length > 0 ? 1 : 0), width: Number(e.target.value) })}
+                                                className="h-1.5 flex-1 accent-[#0d5a52]"
+                                              />
+                                              <span className="w-10 shrink-0 text-right text-[10px] font-semibold text-[#1a1612] dark:text-[#ede7de]">{dim.width || 1} м</span>
+                                            </div>
+                                          )}
+                                          <div className="text-xs font-semibold text-[#0d5a52] dark:text-[#4db8ae]">Итого: {fmt(option.price_modifier * (dim.length || 1) * (dim.width || 1))}</div>
+                                        </div>
                                       )
 
                                       const stepper = (
@@ -1164,7 +1220,12 @@ function ClassicDesign(props: DesignProps) {
                                               {!isActive && option.description && (
                                                 <div className="mt-0.5 line-clamp-2 text-[10px] leading-tight text-[#7a6f66] dark:text-[#9a8f87]">{option.description}</div>
                                               )}
-                                              {hasStepper ? (
+                                              {hasDimensions ? (
+                                                <div className="mt-1">
+                                                  <span className={`text-xs font-semibold ${isActive ? 'text-[#0d5a52]' : 'text-[#b87524]'}`}>{priceLine}</span>
+                                                  {isActive && dimensionControls}
+                                                </div>
+                                              ) : hasStepper ? (
                                                 <div className="mt-1 flex items-center justify-between">
                                                   <span className={`text-xs font-semibold ${isActive ? 'text-[#0d5a52]' : 'text-[#b87524]'}`}>{priceLine}</span>
                                                   {stepper}
@@ -1186,7 +1247,7 @@ function ClassicDesign(props: DesignProps) {
                                             isActive ? 'border-[#0d5a52] bg-[#f0f7f5] dark:bg-[#0d5a52]/15' : 'border-[#e0d5c9] dark:border-[#38322a] hover:border-[#0d5a52]/40 hover:bg-[#f8f4f0] dark:hover:bg-[#2e2820]'
                                           } ${isDisabled ? 'opacity-40 grayscale' : ''}`}
                                         >
-                                          {!hasStepper && (
+                                          {!hasStepper && !hasDimensions && (
                                             <span
                                               className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border transition-colors ${
                                                 isActive ? 'border-[#0d5a52] bg-[#0d5a52] text-white' : 'border-[#c4b8a8] dark:border-[#5a5048]'
@@ -1209,7 +1270,12 @@ function ClassicDesign(props: DesignProps) {
                                               </div>
                                             )}
                                             {!isActive && option.description && <div className="mt-0.5 line-clamp-1 text-xs text-[#7a6f66] dark:text-[#9a8f87]">{option.description}</div>}
-                                            {hasStepper ? (
+                                            {hasDimensions ? (
+                                              <div className="mt-1">
+                                                <span className={`text-xs font-semibold ${isActive ? 'text-[#0d5a52]' : 'text-[#b87524]'}`}>{priceLine}</span>
+                                                {isActive && dimensionControls}
+                                              </div>
+                                            ) : hasStepper ? (
                                               <div className="mt-1 flex items-center justify-between">
                                                 <span className={`text-xs font-semibold ${isActive ? 'text-[#0d5a52]' : 'text-[#b87524]'}`}>{priceLine}</span>
                                                 {stepper}
@@ -1398,15 +1464,19 @@ function ClassicDesign(props: DesignProps) {
                                   </div>
                                   <div className="space-y-1.5">
                                     {opts.map((o) => {
+                                      const isDimension = o.max_length > 0 || o.max_width > 0
+                                      const dim = dimensions[o.id]
                                       const qty = quantities[o.id] ?? 1
                                       const choicePrice = selectedOptionChoices[o.id]?.price ?? 0
-                                      const line = o.base_price + o.price_modifier * qty + choicePrice
+                                      const line = isDimension
+                                        ? o.base_price + o.price_modifier * (dim?.length ?? 0) * (dim?.width ?? 0) + choicePrice
+                                        : o.base_price + o.price_modifier * qty + choicePrice
                                       const choiceName = selectedOptionChoices[o.id]?.name
                                       return (
                                         <div key={o.id} className="flex items-baseline justify-between gap-2">
                                           <span className="text-xs text-[#1a1612] dark:text-[#ede7de]">
                                             {o.name}
-                                            {qty > 1 ? ` × ${qty}` : ''}
+                                            {isDimension && dim ? ` (${dim.length}×${dim.width} м)` : qty > 1 ? ` × ${qty}` : ''}
                                             {choiceName && <span className="block text-[10px] text-[#7a6f66] dark:text-[#9a8f87]">{choiceName}</span>}
                                           </span>
                                           <span className="shrink-0 text-xs font-semibold text-[#b87524]">
@@ -1606,6 +1676,7 @@ export default function ClientPage() {
   const [optionsByGroup, setOptionsByGroup] = useState<Record<string, ClientOption[]>>({})
   const [selectedOptions, setSelectedOptions] = useState<Record<string, string[]>>({})
   const [quantities, setQuantities] = useState<Record<string, number>>({})
+  const [dimensions, setDimensions] = useState<Record<string, { length: number; width: number }>>({})
   const [selectedOptionChoices, setSelectedOptionChoices] = useState<Record<string, PopupChoice>>({})
   const [exclusions, setExclusions] = useState<Exclusion[]>([])
 
@@ -1670,6 +1741,7 @@ export default function ClientPage() {
     setSelectedLayoutId('')
     setSelectedOptions({})
     setQuantities({})
+    setDimensions({})
     setSelectedOptionChoices({})
 
     Promise.all([layoutService.getLayoutsByModel(selectedModelId), groupService.getGroupsByModel(selectedModelId)])
@@ -1725,10 +1797,15 @@ export default function ClientPage() {
     const layout = selectedLayout?.price_modifier ?? 0
     const options = selectedOptionEntities.reduce((sum, o) => {
       const choicePrice = selectedOptionChoices[o.id]?.price ?? 0
+      const isDimension = o.max_length > 0 || o.max_width > 0
+      if (isDimension) {
+        const dim = dimensions[o.id]
+        return sum + o.base_price + o.price_modifier * (dim?.length ?? 0) * (dim?.width ?? 0) + choicePrice
+      }
       return sum + o.base_price + o.price_modifier * (quantities[o.id] ?? 1) + choicePrice
     }, 0)
     return base + layout + options + deliveryTotal
-  }, [selectedModel, selectedLayout, selectedOptionEntities, quantities, deliveryTotal, selectedOptionChoices])
+  }, [selectedModel, selectedLayout, selectedOptionEntities, quantities, dimensions, deliveryTotal, selectedOptionChoices])
 
   const allOptions = useMemo(() => Object.values(optionsByGroup).flat(), [optionsByGroup])
   const optionNameById = (id: string) => allOptions.find((o) => o.id === id)?.name || ''
@@ -1823,6 +1900,17 @@ export default function ClientPage() {
       else delete next[optionId]
       return next
     })
+    setDimensions((prev) => {
+      const next = { ...prev }
+      reasonIds.forEach((rid) => delete next[rid])
+      const opt = allOptions.find((o) => o.id === optionId)
+      if (opt && (opt.max_length > 0 || opt.max_width > 0)) {
+        next[optionId] = { length: opt.max_length > 0 ? 1 : 0, width: opt.max_width > 0 ? 1 : 0 }
+      } else {
+        delete next[optionId]
+      }
+      return next
+    })
     setPendingConflict(null)
   }
 
@@ -1867,6 +1955,32 @@ export default function ClientPage() {
     })
   }
 
+  const setOptionDimensions = (optionId: string, next: { length: number; width: number }) => {
+    const groupId = groupIdByOptionId(optionId)
+    if (!groupId) return
+    const length = Math.max(0, Math.round(next.length))
+    const width = Math.max(0, Math.round(next.width))
+    const isSelected = length > 0 || width > 0
+    if (isSelected && disabledOptionIds.has(optionId)) {
+      setPendingConflict(buildConflict(optionId, groupId, 1, optionNameById(optionId)))
+      return
+    }
+    setDimensions((prev) => {
+      if (!isSelected) {
+        const copy = { ...prev }
+        delete copy[optionId]
+        return copy
+      }
+      return { ...prev, [optionId]: { length, width } }
+    })
+    setSelectedOptions((prev) => {
+      const current = prev[groupId] || []
+      const has = current.includes(optionId)
+      if (!isSelected) return has ? { ...prev, [groupId]: current.filter((id) => id !== optionId) } : prev
+      return has ? prev : { ...prev, [groupId]: [...current, optionId] }
+    })
+  }
+
   const createOffer = async () => {
     if (!selectedModelId) {
       setError('Выберите модель')
@@ -1884,6 +1998,11 @@ export default function ClientPage() {
         const choice = selectedOptionChoices[id]
         if (choice) optionChoices[id] = { name: choice.name, price: choice.price }
       }
+      const optionDimensions: Record<string, { length: number; width: number }> = {}
+      for (const id of selectedOptionIds) {
+        const dim = dimensions[id]
+        if (dim && (dim.length > 0 || dim.width > 0)) optionDimensions[id] = dim
+      }
       const match = window.location.pathname.match(/\/cli(\d+)/)
       const result = await calculationService.createCalculation({
         model_id: selectedModelId,
@@ -1891,6 +2010,7 @@ export default function ClientPage() {
         selected_options: selectedOptionIds.map((id) => ({ id, qty: quantities[id] ?? 1 })),
         total_price: totalPrice,
         option_choices: Object.keys(optionChoices).length > 0 ? optionChoices : undefined,
+        option_dimensions: Object.keys(optionDimensions).length > 0 ? optionDimensions : undefined,
         account: match ? match[1] : undefined,
       })
       setOfferLink(`${window.location.origin}/calc/${result.public_slug}`)
@@ -1931,6 +2051,7 @@ export default function ClientPage() {
     optionsByGroup,
     selectedOptions,
     quantities,
+    dimensions,
     disabledOptionIds,
     loading,
     saving,
@@ -1947,6 +2068,7 @@ export default function ClientPage() {
     onLayoutChange: setSelectedLayoutId,
     toggleOption,
     setQuantity,
+    setOptionDimensions,
     createOffer,
     copyLink,
     onEnlargePhoto: setEnlargedPhotoUrl,
