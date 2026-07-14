@@ -1964,6 +1964,20 @@ export default function AdminPage() {
                 </button>
               </div>
 
+              {!isOpen && group.model_ids && models.length > 1 && (
+                <div className="flex flex-wrap items-center gap-1 px-5 pb-3 pl-11">
+                  <span className="mr-1 text-[10px] text-slate-400 dark:text-[#6a5f57]">🎯 Только для:</span>
+                  {group.model_ids.map((id) => {
+                    const m = models.find((mm) => Number(mm.id) === id)
+                    return (
+                      <span key={id} className="rounded-full border border-[#0d5a52]/30 bg-[#0d5a52]/10 px-2 py-0.5 text-[10px] font-medium text-[#0d5a52] dark:bg-[#0d5a52]/20 dark:text-[#4db8ae]">
+                        {m?.name || id}
+                      </span>
+                    )
+                  })}
+                </div>
+              )}
+
               {isOpen && (
                 <div className="px-5 pb-5">
                   {children.length > 0 && <p className="mb-3 rounded-lg bg-slate-50 dark:bg-[#1f1c16] px-3 py-2 text-xs text-slate-400 dark:text-[#6a5f57]">Это блок-обёртка для вложенных блоков ниже — опции сюда не добавляются напрямую.</p>}
@@ -2276,6 +2290,19 @@ export default function AdminPage() {
                           </svg>
                         </button>
                       </div>
+                      {!isOpen && section.model_ids && models.length > 1 && (
+                        <div className="flex flex-wrap items-center gap-1 px-6 pb-2">
+                          <span className="mr-1 text-[10px] text-slate-400 dark:text-[#6a5f57]">🎯 Только для:</span>
+                          {section.model_ids.map((id) => {
+                            const m = models.find((mm) => mm.id === id)
+                            return (
+                              <span key={id} className="rounded-full border border-[#0d5a52]/30 bg-[#0d5a52]/10 px-2 py-0.5 text-[10px] font-medium text-[#0d5a52] dark:bg-[#0d5a52]/20 dark:text-[#4db8ae]">
+                                {m?.name || id}
+                              </span>
+                            )
+                          })}
+                        </div>
+                      )}
                       {isOpen && (
                         <div className="px-6 pb-2 pt-1">
                           {models.length > 1 && (
