@@ -1,7 +1,10 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { Yeseva_One } from 'next/font/google'
 import { ThemeToggle } from '@/components/ThemeProvider'
+
+const brandFont = Yeseva_One({ subsets: ['cyrillic', 'latin'], weight: '400', display: 'swap' })
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -590,7 +593,7 @@ function InclusionPopup({ title, sections, onClose }: { title: string; sections:
                 {isOpen && (
                   <ul className="bg-[#f8f4f0] dark:bg-[#1c1a16] px-5 pb-3 pt-1">
                     {s.items.map((item, i) => (
-                      <li key={i} className="relative py-1.5 pl-3.5 text-[13px] text-[#7a6f66] dark:text-[#9a8f87] border-b border-[#e8ddd5] dark:border-[#2e2820] last:border-b-0">
+                      <li key={i} className="relative py-1.5 pl-3.5 text-sm leading-snug text-[#7a6f66] dark:text-[#9a8f87] border-b border-[#e8ddd5] dark:border-[#2e2820] last:border-b-0">
                         <span className="absolute left-0 top-[11px] h-1.5 w-1.5 rounded-full bg-[#0d5a52] opacity-50" />
                         {item}
                       </li>
@@ -948,8 +951,13 @@ function ClassicDesign(props: DesignProps) {
               <ThemeToggle />
             </div>
           </div>
-          <div className="absolute left-4 top-full z-50 -translate-y-1/2 md:left-8">
+          <div className="absolute left-4 top-full z-50 flex -translate-y-1/2 items-center gap-3 md:left-8">
             <WorkspaceLogo logoLightUrl={logoLightUrl} logoDarkUrl={logoDarkUrl} workspaceName={workspaceName} size="lg" />
+            <span
+              className={`${brandFont.className} text-2xl leading-none tracking-wide text-[#0d5a52] drop-shadow-[0_1px_2px_rgba(255,255,255,0.6)] dark:text-[#5fcabf] dark:drop-shadow-[0_1px_3px_rgba(0,0,0,0.5)] md:text-3xl`}
+            >
+              СК Сибирия
+            </span>
           </div>
         </header>
 
@@ -1358,7 +1366,7 @@ function ClassicDesign(props: DesignProps) {
                                                 </div>
                                               )}
                                               {!isActive && option.description && (
-                                                <div className="mt-0.5 line-clamp-2 text-[10px] leading-tight text-[#7a6f66] dark:text-[#9a8f87]">{option.description}</div>
+                                                <div className="mt-0.5 line-clamp-2 text-xs leading-snug text-[#7a6f66] dark:text-[#9a8f87]">{option.description}</div>
                                               )}
                                               {hasDimensions ? (
                                                 <div className="mt-1">
@@ -1409,7 +1417,7 @@ function ClassicDesign(props: DesignProps) {
                                                 {choice.price > 0 ? ` +${fmt(choice.price)}` : ''}
                                               </div>
                                             )}
-                                            {!isActive && option.description && <div className="mt-0.5 line-clamp-1 text-xs text-[#7a6f66] dark:text-[#9a8f87]">{option.description}</div>}
+                                            {!isActive && option.description && <div className="mt-0.5 line-clamp-1 text-sm text-[#7a6f66] dark:text-[#9a8f87]">{option.description}</div>}
                                             {hasDimensions ? (
                                               <div className="mt-1">
                                                 <span className={`text-xs font-semibold ${isActive ? 'text-[#0d5a52]' : 'text-[#b87524]'}`}>{priceLine}</span>
@@ -1798,7 +1806,11 @@ export default function ClientPage() {
       .finally(() => setLoading(false))
   }, [selectedModelId])
 
-  const visibleModels = useMemo(() => (publishedModelIds !== null ? models.filter((m) => publishedModelIds.includes(m.id)) : models), [models, publishedModelIds])
+  const visibleModels = useMemo(() => {
+    if (publishedModelIds === null) return models
+    const published = new Set(publishedModelIds.map(String))
+    return models.filter((m) => published.has(m.id))
+  }, [models, publishedModelIds])
   const selectedModel = useMemo(() => visibleModels.find((m) => m.id === selectedModelId) ?? null, [visibleModels, selectedModelId])
   const selectedLayout = useMemo(() => layouts.find((l) => l.id === selectedLayoutId) ?? null, [layouts, selectedLayoutId])
   const selectedOptionIds = useMemo(() => Object.values(selectedOptions).flat(), [selectedOptions])

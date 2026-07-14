@@ -1443,12 +1443,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'get_calculation') {
         $types = str_repeat('i', count($option_ids));
         // COALESCE onto the per-model photo override (if the seller set one for this model)
         // so the saved offer shows exactly the picture the buyer saw while configuring.
-        $stmt4 = $db->prepare("SELECT o.id, o.name, o.price, o.base_price, o.max_length, o.max_width, COALESCE(oma.image_url, o.image_url) as image_url, IFNULL(g.name,'Опция') as group_name
+        $stmt4 = $db->prepare("SELECT o.id, o.group_id, o.sort_order, o.name, o.price, o.base_price, o.max_length, o.max_width, COALESCE(oma.image_url, o.image_url) as image_url, IFNULL(g.name,'Опция') as group_name
             FROM options_catalog o
             LEFT JOIN option_groups g ON g.id=o.group_id
             LEFT JOIN option_model_availability oma ON oma.option_id=o.id AND oma.model_id=$model_id
-            WHERE o.workspace_id=$calc_workspace_id AND o.id IN ($placeholders)
-            ORDER BY COALESCE(g.sort_order,9999) ASC, o.sort_order ASC, o.id ASC");
+            WHERE o.workspace_id=$calc_workspace_id AND o.id IN ($placeholders)");
         $stmt4->bind_param($types, ...$option_ids);
         $stmt4->execute();
         $res = $stmt4->get_result();
@@ -1478,6 +1477,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'get_calculation') {
             }
             $selected_options[] = $row;
         }
+
+        // Order to match the admin/client tree view: a flat ORDER BY group.sort_order isn't
+        // enough once blocks are nested (parent_group_id) — a child block's own sort_order is
+        // only meaningful among its siblings, not against unrelated top-level blocks. Walk the
+        // group tree the same way the client configurator does, then sort options by each
+        // option's position in that walk (falling back to option.sort_order within a group).
+        $group_rank = array();
+        $gr = $db->query("SELECT id, sort_order, parent_group_id FROM option_groups WHERE workspace_id=$calc_workspace_id");
+        $children_of = array();
+        while ($g = $gr->fetch_assoc()) {
+            $parent = $g['parent_group_id'] !== null ? intval($g['parent_group_id']) : 0;
+            if (!isset($children_of[$parent])) $children_of[$parent] = array();
+            $children_of[$parent][] = $g;
+        }
+        foreach ($children_of as $parent => &$list) {
+            usort($list, function ($a, $b) { return intval($a['sort_order']) <=> intval($b['sort_order']); });
+        }
+        unset($list);
+        $rank_counter = 0;
+        $walk_groups = function ($parent) use (&$walk_groups, &$group_rank, &$rank_counter, $children_of) {
+            foreach (isset($children_of[$parent]) ? $children_of[$parent] : array() as $g) {
+                $group_rank[intval($g['id'])] = $rank_counter++;
+                $walk_groups(intval($g['id']));
+            }
+        };
+        $walk_groups(0);
+
+        usort($selected_options, function ($a, $b) use ($group_rank) {
+            $ra = isset($group_rank[intval($a['group_id'])]) ? $group_rank[intval($a['group_id'])] : 999999;
+            $rb = isset($group_rank[intval($b['group_id'])]) ? $group_rank[intval($b['group_id'])] : 999999;
+            if ($ra !== $rb) return $ra <=> $rb;
+            $sa = intval($a['sort_order']);
+            $sb = intval($b['sort_order']);
+            if ($sa !== $sb) return $sa <=> $sb;
+            return intval($a['id']) <=> intval($b['id']);
+        });
     }
     $model_image = $model ? ($model['image_url'] ?? '') : '';
     // base_price: prefer value saved at creation time, fallback to current model price

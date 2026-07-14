@@ -1374,13 +1374,17 @@ export default function AdminPage() {
   const togglePublish = async (modelId: string) => {
     setTogglingPublish(true)
     const allIds = models.map((m) => m.id)
-    const current = publishedModelIds ?? allIds
+    // Normalize to strings and drop ids for models that no longer exist — published_model_ids
+    // previously accumulated stale/mixed-type entries (some numeric) from deleted models,
+    // which made string-strict .includes() checks silently drop legitimately published ones.
+    const validIds = new Set(allIds)
+    const current = (publishedModelIds ?? allIds).map(String).filter((id) => validIds.has(id))
     const next = current.includes(modelId) ? current.filter((id) => id !== modelId) : [...current, modelId]
     setPublishedModelIds(next)
     await patchWorkspaceSettings({ published_model_ids: next })
     setTogglingPublish(false)
   }
-  const isPublished = (modelId: string) => publishedModelIds === null || publishedModelIds.includes(modelId)
+  const isPublished = (modelId: string) => publishedModelIds === null || publishedModelIds.map(String).includes(modelId)
 
   const saveDeliveryConfig = async (groupId: string, config: DeliveryConfig) => {
     const next = { ...deliveryConfigs, [groupId]: config }
@@ -1655,6 +1659,28 @@ export default function AdminPage() {
       if (!res.ok) {
         alert(res.error || 'Ошибка копирования блока.')
         return
+      }
+      // duplicate_group only clones the MySQL row (name/options) — popup section text and
+      // contact details live in workspace-settings (Next.js JSON), so they must be cloned
+      // here too, keyed by the new group id, or the copy would render as empty/"not found".
+      const newGroupId = String(res.id)
+      const source = groups.find((g) => g.id === groupId)
+      if (source?.block_type === 'popup') {
+        const sourceBlock = popupBlocks.find((b) => b.id === groupId)
+        if (sourceBlock) {
+          const cloned: PopupBlock = { ...sourceBlock, id: newGroupId }
+          const next = [...popupBlocks, cloned]
+          setPopupBlocks(next)
+          await savePopupBlocks(next)
+        }
+      } else if (source?.block_type === 'contacts') {
+        const sourceBlock = contactBlocks.find((b) => b.id === groupId)
+        if (sourceBlock) {
+          const cloned: ContactBlock = { ...sourceBlock, id: newGroupId }
+          const next = [...contactBlocks, cloned]
+          setContactBlocks(next)
+          await saveContactBlocks(next)
+        }
       }
       await loadAll(selectedModelId)
     } finally {
