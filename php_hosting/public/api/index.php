@@ -931,6 +931,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'delete_layout') {
     json_out(array('ok' => true));
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'update_group_name') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    if (!$data) { parse_str(file_get_contents('php://input'), $data); }
+    if (!$data) $data = $_POST;
+    $id = intval(isset($data['id']) ? $data['id'] : 0);
+    $name = isset($data['name']) ? trim($data['name']) : '';
+    if ($id <= 0 || $name === '') json_out(array('ok' => false, 'error' => 'id/name required'));
+    $stmt = $db->prepare('UPDATE option_groups SET name=? WHERE id=? AND workspace_id=?');
+    $stmt->bind_param('sii', $name, $id, $WORKSPACE_ID);
+    if (!$stmt->execute()) json_out(array('ok' => false, 'error' => $db->error));
+    json_out(array('ok' => true));
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'update_group_selection') {
     $data = json_decode(file_get_contents('php://input'), true);
     if (!$data) { parse_str(file_get_contents('php://input'), $data); }

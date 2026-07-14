@@ -1524,6 +1524,15 @@ export default function AdminPage() {
     })
   }, [])
 
+  const savedGroupNames = useRef<Record<string, string>>({})
+  const saveGroupName = async (groupId: string, name: string) => {
+    const trimmed = name.trim()
+    if (!trimmed || savedGroupNames.current[groupId] === trimmed) return
+    savedGroupNames.current[groupId] = trimmed
+    await phpPost('update_group_name', { id: Number(groupId), name: trimmed })
+    setGroups((prev) => prev.map((g) => (g.id === groupId ? { ...g, name: trimmed } : g)))
+  }
+
   const toggleSelectionType = async (groupId: string, current: 'single' | 'multiple') => {
     const next = current === 'multiple' ? 'single' : 'multiple'
     await phpPost('update_group_selection', { id: Number(groupId), selection_type: next })
@@ -1869,11 +1878,18 @@ export default function AdminPage() {
                     title="Выбрать для объединения"
                   />
                 )}
-                <button onClick={() => toggleExpanded(group.id)} className="flex flex-1 items-center gap-3 py-4 pr-5 text-left">
+                <button onClick={() => toggleExpanded(group.id)} className="flex items-center gap-3 py-4 pl-1 text-left">
                   <span className={`text-xs text-slate-400 dark:text-[#6a5f57] transition-transform duration-150 ${isOpen ? 'rotate-90' : ''}`}>▶</span>
                   <span className="text-sm">{blockMeta?.icon ?? '☑️'}</span>
-                  <span className="flex-1 text-sm font-medium text-slate-700 dark:text-[#d5cfc7]">{group.name}</span>
                 </button>
+                <input
+                  value={group.name}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(e) => setGroups((prev) => prev.map((g) => (g.id === group.id ? { ...g, name: e.target.value } : g)))}
+                  onBlur={() => saveGroupName(group.id, group.name)}
+                  onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+                  className="min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 py-1.5 text-sm font-medium text-slate-700 dark:text-[#d5cfc7] focus:border-slate-200 dark:focus:border-[#3a312a] focus:bg-white dark:focus:bg-[#252119] focus:outline-none"
+                />
                 <span
                   onClick={(e) => {
                     e.stopPropagation()
