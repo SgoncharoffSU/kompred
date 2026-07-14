@@ -1,11 +1,12 @@
 ﻿import { PrintButton } from './print-button'
 
-const PHP_STATIC_BASE = 'http://159.194.225.55:8080'
-
+// This becomes an <img src> the visitor's own browser fetches directly, so it must resolve
+// against the public site (nginx serves /uploads/ on the main domain) — never the internal
+// loopback-only PHP port.
 function normalizeUrl(url: string): string {
   if (!url) return ''
   if (url.startsWith('http://') || url.startsWith('https://')) return url
-  return `${PHP_STATIC_BASE}${url.startsWith('/') ? '' : '/'}${url}`
+  return url.startsWith('/') ? url : `/${url}`
 }
 
 type SelectedOption = {
@@ -31,7 +32,7 @@ type OfferData = {
 }
 
 async function getCalculation(slug: string): Promise<OfferData | null> {
-  const phpApi = process.env.PHP_API_URL || 'http://159.194.225.55:8080/api/index.php'
+  const phpApi = process.env.PHP_API_URL || 'http://127.0.0.1:8080/api/index.php'
   try {
     const res = await fetch(`${phpApi}?action=get_calculation&slug=${encodeURIComponent(slug)}`, { cache: 'no-store' })
     if (!res.ok) return null

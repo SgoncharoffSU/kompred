@@ -4,6 +4,18 @@ require __DIR__ . '/db.php';
 $db = db_connect();
 $action = isset($_GET['action']) ? $_GET['action'] : '';
 
+// Every request must be scoped to a tenant workspace. The Next.js proxy in front of
+// this API resolves the caller's workspace (from their session, or from ?wid= for the
+// public client-facing configurator) and forwards it as X-Workspace-ID — never trust a
+// request that arrives without one. get_calculation is the one exception: it's looked
+// up by an unguessable public_slug token and derives its own workspace from the stored
+// calculation row, so it can't use the header (the fixed-offer page fetches PHP directly,
+// without going through the proxy).
+$WORKSPACE_ID = isset($_SERVER['HTTP_X_WORKSPACE_ID']) ? intval($_SERVER['HTTP_X_WORKSPACE_ID']) : 0;
+if ($WORKSPACE_ID <= 0 && $action !== 'get_calculation') {
+    json_out(array('ok' => false, 'error' => 'workspace required'));
+}
+
 function media_storage_dir() {
     return realpath(__DIR__ . '/../uploads') ?: (__DIR__ . '/../uploads');
 }
@@ -51,9 +63,12 @@ function sanitize_svg($content) {
     return $doc->saveXML($doc->documentElement);
 }
 
-function media_rows($db) {
+function media_rows($db, $workspace_id) {
     $rows = array();
-    $res = $db->query('SELECT id,file_url,file_name,mime_type,file_size,IFNULL(folder_id,0) as folder_id,created_at FROM media_library ORDER BY id DESC LIMIT 500');
+    $stmt = $db->prepare('SELECT id,file_url,file_name,mime_type,file_size,IFNULL(folder_id,0) as folder_id,created_at FROM media_library WHERE workspace_id=? ORDER BY id DESC LIMIT 500');
+    $stmt->bind_param('i', $workspace_id);
+    $stmt->execute();
+    $res = $stmt->get_result();
     while ($row = $res->fetch_assoc()) {
         $path = media_file_path($row['file_url']);
         if ($path === '' || !is_file($path)) continue;
@@ -230,6 +245,32 @@ $col_check = $db->query("SHOW COLUMNS FROM options_catalog LIKE 'max_width'");
 if ($col_check && $col_check->num_rows === 0) {
     $db->query("ALTER TABLE options_catalog ADD COLUMN max_width INT NOT NULL DEFAULT 0");
 }
+// Tenant scoping: models/option_groups/options_catalog/calculations/media_library already
+// had a workspace_id column that the API never actually filtered by. exclusion_rules,
+// layouts and media_folders never had one at all. Add it here and backfill every existing
+// unscoped row to workspace_id=1 (Сибирия) — the one real tenant all of today's data
+// belongs to; the column is nullable so any row we can't attribute just stays invisible
+// to every workspace rather than guessing wrong.
+$col_check = $db->query("SHOW COLUMNS FROM exclusion_rules LIKE 'workspace_id'");
+if ($col_check && $col_check->num_rows === 0) {
+    $db->query("ALTER TABLE exclusion_rules ADD COLUMN workspace_id INT NULL DEFAULT NULL");
+    $db->query("UPDATE exclusion_rules SET workspace_id=1 WHERE workspace_id IS NULL");
+}
+$col_check = $db->query("SHOW COLUMNS FROM layouts LIKE 'workspace_id'");
+if ($col_check && $col_check->num_rows === 0) {
+    $db->query("ALTER TABLE layouts ADD COLUMN workspace_id INT NULL DEFAULT NULL");
+    $db->query("UPDATE layouts SET workspace_id=1 WHERE workspace_id IS NULL");
+}
+$col_check = $db->query("SHOW COLUMNS FROM media_folders LIKE 'workspace_id'");
+if ($col_check && $col_check->num_rows === 0) {
+    $db->query("ALTER TABLE media_folders ADD COLUMN workspace_id INT NULL DEFAULT NULL");
+    $db->query("UPDATE media_folders SET workspace_id=1 WHERE workspace_id IS NULL");
+}
+// NOTE: models/option_groups/options_catalog/media_library already had a workspace_id
+// column before this change. Their existing rows are deliberately NOT auto-backfilled
+// here — a handful of `models` rows are still NULL and we don't yet know which tenant
+// they belong to; leaving them NULL just makes them invisible to every workspace (safe)
+// rather than silently guessing and attaching stray rows to Сибирия's real catalog.
 $seed_check = $db->query("SELECT COUNT(*) c FROM option_groups");
 if ($seed_check && intval($seed_check->fetch_assoc()['c']) === 0) {
     $db->query("INSERT INTO option_groups (id,name,sort_order) VALUES (1,'Кровля',1),(2,'Цвет бани',2),(3,'Двери',3),(4,'Окна',4)");
@@ -242,13 +283,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'bootstrap') {
     $media = array();
     $folders = array();
 
-    $res = $db->query('SELECT id,name,image_url,image_crop,base_price,sort_order,created_at FROM models ORDER BY sort_order ASC, id ASC');
+    $stmt = $db->prepare('SELECT id,name,image_url,image_crop,base_price,sort_order,created_at FROM models WHERE workspace_id=? ORDER BY sort_order ASC, id ASC');
+    $stmt->bind_param('i', $WORKSPACE_ID);
+    $stmt->execute();
+    $res = $stmt->get_result();
     while ($row = $res->fetch_assoc()) $models[] = $row;
 
     $availability = array();
     $active_avail = array();
     $photo_overrides = array();
-    $ar = $db->query('SELECT option_id, model_id, is_active, image_url, image_crop FROM option_model_availability');
+    $ar_stmt = $db->prepare('SELECT oma.option_id, oma.model_id, oma.is_active, oma.image_url, oma.image_crop FROM option_model_availability oma INNER JOIN options_catalog o ON o.id=oma.option_id WHERE o.workspace_id=?');
+    $ar_stmt->bind_param('i', $WORKSPACE_ID);
+    $ar_stmt->execute();
+    $ar = $ar_stmt->get_result();
     if ($ar) {
         while ($a = $ar->fetch_assoc()) {
             $oid = intval($a['option_id']);
@@ -265,7 +312,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'bootstrap') {
             }
         }
     }
-    $res2 = $db->query('SELECT o.id,o.group_id,o.sort_order,IFNULL(g.name,\'??? ??????\') as group_name,o.name,o.image_url,o.image_crop,o.price,o.base_price,o.is_default,o.description,o.popup_options,o.features_json,o.max_quantity,o.max_length,o.max_width,o.created_at FROM options_catalog o LEFT JOIN option_groups g ON g.id=o.group_id ORDER BY COALESCE(g.sort_order,9999), o.sort_order ASC, o.id ASC');
+    $stmt2 = $db->prepare('SELECT o.id,o.group_id,o.sort_order,IFNULL(g.name,\'??? ??????\') as group_name,o.name,o.image_url,o.image_crop,o.price,o.base_price,o.is_default,o.description,o.popup_options,o.features_json,o.max_quantity,o.max_length,o.max_width,o.created_at FROM options_catalog o LEFT JOIN option_groups g ON g.id=o.group_id WHERE o.workspace_id=? ORDER BY COALESCE(g.sort_order,9999), o.sort_order ASC, o.id ASC');
+    $stmt2->bind_param('i', $WORKSPACE_ID);
+    $stmt2->execute();
+    $res2 = $stmt2->get_result();
     while ($row = $res2->fetch_assoc()) {
         $row['features'] = $row['features_json'] ? json_decode($row['features_json'], true) : array();
         unset($row['features_json']);
@@ -277,27 +327,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'bootstrap') {
         $row['model_photos'] = isset($photo_overrides[$oid]) ? $photo_overrides[$oid] : new stdClass();
         $options[] = $row;
     }
-    $res3 = $db->query('SELECT id,name,sort_order,selection_type,parent_group_id,required,enlarge_photo,block_type,model_ids,created_at FROM option_groups ORDER BY sort_order ASC, id ASC');
+    $stmt3 = $db->prepare('SELECT id,name,sort_order,selection_type,parent_group_id,required,enlarge_photo,block_type,model_ids,created_at FROM option_groups WHERE workspace_id=? ORDER BY sort_order ASC, id ASC');
+    $stmt3->bind_param('i', $WORKSPACE_ID);
+    $stmt3->execute();
+    $res3 = $stmt3->get_result();
     while ($row = $res3->fetch_assoc()) {
         $row['model_ids'] = $row['model_ids'] ? json_decode($row['model_ids'], true) : null;
         $groups[] = $row;
     }
 
     $exclusions = array();
-    $res5 = $db->query('SELECT id,a_type,a_id,b_type,b_id FROM exclusion_rules');
+    $stmt5 = $db->prepare('SELECT id,a_type,a_id,b_type,b_id FROM exclusion_rules WHERE workspace_id=?');
+    $stmt5->bind_param('i', $WORKSPACE_ID);
+    $stmt5->execute();
+    $res5 = $stmt5->get_result();
     while ($row = $res5->fetch_assoc()) $exclusions[] = $row;
 
-    $media = media_rows($db);
-    $res4 = $db->query('SELECT id,name,created_at FROM media_folders ORDER BY id ASC');
+    $media = media_rows($db, $WORKSPACE_ID);
+    $stmt4 = $db->prepare('SELECT id,name,created_at FROM media_folders WHERE workspace_id=? ORDER BY id ASC');
+    $stmt4->bind_param('i', $WORKSPACE_ID);
+    $stmt4->execute();
+    $res4 = $stmt4->get_result();
     while ($row = $res4->fetch_assoc()) $folders[] = $row;
 
     json_out(array('ok' => true, 'models' => $models, 'options' => $options, 'groups' => $groups, 'exclusions' => $exclusions, 'media' => $media, 'folders' => $folders));
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'media_list') {
-    $media = media_rows($db);
+    $media = media_rows($db, $WORKSPACE_ID);
     $folders = array();
-    $res2 = $db->query('SELECT id,name,created_at FROM media_folders ORDER BY id ASC');
+    $stmt2 = $db->prepare('SELECT id,name,created_at FROM media_folders WHERE workspace_id=? ORDER BY id ASC');
+    $stmt2->bind_param('i', $WORKSPACE_ID);
+    $stmt2->execute();
+    $res2 = $stmt2->get_result();
     while ($row = $res2->fetch_assoc()) $folders[] = $row;
     json_out(array('ok' => true, 'media' => $media, 'folders' => $folders));
 }
@@ -305,8 +367,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'media_list') {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'create_media_folder') {
     $name = isset($_POST['name']) ? trim($_POST['name']) : '';
     if ($name === '') json_out(array('ok' => false, 'error' => 'name required'));
-    $stmt = $db->prepare('INSERT INTO media_folders (name) VALUES (?)');
-    $stmt->bind_param('s', $name);
+    $stmt = $db->prepare('INSERT INTO media_folders (name, workspace_id) VALUES (?, ?)');
+    $stmt->bind_param('si', $name, $WORKSPACE_ID);
     $stmt->execute();
     json_out(array('ok' => true, 'id' => $db->insert_id));
 }
@@ -315,8 +377,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'update_media_folder') 
     $id = intval(isset($_POST['id']) ? $_POST['id'] : 0);
     $name = isset($_POST['name']) ? trim($_POST['name']) : '';
     if ($id <= 0 || $name === '') json_out(array('ok' => false, 'error' => 'id/name required'));
-    $stmt = $db->prepare('UPDATE media_folders SET name=? WHERE id=?');
-    $stmt->bind_param('si', $name, $id);
+    $stmt = $db->prepare('UPDATE media_folders SET name=? WHERE id=? AND workspace_id=?');
+    $stmt->bind_param('sii', $name, $id, $WORKSPACE_ID);
     $stmt->execute();
     json_out(array('ok' => true));
 }
@@ -324,14 +386,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'update_media_folder') 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'copy_media_folder') {
     $id = intval(isset($_POST['id']) ? $_POST['id'] : 0);
     if ($id <= 0) json_out(array('ok' => false, 'error' => 'id required'));
-    $stmt = $db->prepare('SELECT name FROM media_folders WHERE id=?');
-    $stmt->bind_param('i', $id);
+    $stmt = $db->prepare('SELECT name FROM media_folders WHERE id=? AND workspace_id=?');
+    $stmt->bind_param('ii', $id, $WORKSPACE_ID);
     $stmt->execute();
     $row = $stmt->get_result()->fetch_assoc();
     if (!$row) json_out(array('ok' => false, 'error' => 'not found'));
     $new_name = $row['name'] . ' копия';
-    $stmt2 = $db->prepare('INSERT INTO media_folders (name) VALUES (?)');
-    $stmt2->bind_param('s', $new_name);
+    $stmt2 = $db->prepare('INSERT INTO media_folders (name, workspace_id) VALUES (?, ?)');
+    $stmt2->bind_param('si', $new_name, $WORKSPACE_ID);
     $stmt2->execute();
     json_out(array('ok' => true, 'id' => $db->insert_id));
 }
@@ -339,15 +401,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'copy_media_folder') {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'delete_media_folder') {
     $id = intval(isset($_POST['id']) ? $_POST['id'] : 0);
     if ($id <= 0) json_out(array('ok' => false, 'error' => 'id required'));
-    $stmt = $db->prepare('SELECT COUNT(*) c FROM media_library WHERE folder_id=?');
-    $stmt->bind_param('i', $id);
+    $stmt = $db->prepare('SELECT COUNT(*) c FROM media_library WHERE folder_id=? AND workspace_id=?');
+    $stmt->bind_param('ii', $id, $WORKSPACE_ID);
     $stmt->execute();
     $row = $stmt->get_result()->fetch_assoc();
     if ($row && intval($row['c']) > 0) {
         json_out(array('ok' => false, 'error' => 'Папка не пуста'));
     }
-    $stmt2 = $db->prepare('DELETE FROM media_folders WHERE id=?');
-    $stmt2->bind_param('i', $id);
+    $stmt2 = $db->prepare('DELETE FROM media_folders WHERE id=? AND workspace_id=?');
+    $stmt2->bind_param('ii', $id, $WORKSPACE_ID);
     $stmt2->execute();
     json_out(array('ok' => true));
 }
@@ -357,13 +419,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'move_media') {
     $folder_raw = isset($_POST['folder_id']) ? trim($_POST['folder_id']) : '';
     if ($id <= 0) json_out(array('ok' => false, 'error' => 'id required'));
     if ($folder_raw === '' || $folder_raw === '0') {
-        $stmt = $db->prepare('UPDATE media_library SET folder_id=NULL WHERE id=?');
-        $stmt->bind_param('i', $id);
+        $stmt = $db->prepare('UPDATE media_library SET folder_id=NULL WHERE id=? AND workspace_id=?');
+        $stmt->bind_param('ii', $id, $WORKSPACE_ID);
         $stmt->execute();
     } else {
         $folder_id = intval($folder_raw);
-        $stmt = $db->prepare('UPDATE media_library SET folder_id=? WHERE id=?');
-        $stmt->bind_param('ii', $folder_id, $id);
+        if (!folder_owned_by_workspace($db, $folder_id, $WORKSPACE_ID)) json_out(array('ok' => false, 'error' => 'folder not found'));
+        $stmt = $db->prepare('UPDATE media_library SET folder_id=? WHERE id=? AND workspace_id=?');
+        $stmt->bind_param('iii', $folder_id, $id, $WORKSPACE_ID);
         $stmt->execute();
     }
     json_out(array('ok' => true));
@@ -374,8 +437,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'delete_media') {
     $id = intval(isset($jd['id']) ? $jd['id'] : (isset($_POST['id']) ? $_POST['id'] : 0));
     if ($id <= 0) json_out(array('ok' => false, 'error' => 'id required'));
 
-    $stmt = $db->prepare('SELECT file_url FROM media_library WHERE id=?');
-    $stmt->bind_param('i', $id);
+    $stmt = $db->prepare('SELECT file_url FROM media_library WHERE id=? AND workspace_id=?');
+    $stmt->bind_param('ii', $id, $WORKSPACE_ID);
     $stmt->execute();
     $row = $stmt->get_result()->fetch_assoc();
     if (!$row) json_out(array('ok' => false, 'error' => 'not found'));
@@ -383,8 +446,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'delete_media') {
     $file_url = $row['file_url'];
     $file_path = media_file_path($file_url);
 
-    $stmt2 = $db->prepare('DELETE FROM media_library WHERE id=?');
-    $stmt2->bind_param('i', $id);
+    $stmt2 = $db->prepare('DELETE FROM media_library WHERE id=? AND workspace_id=?');
+    $stmt2->bind_param('ii', $id, $WORKSPACE_ID);
     $stmt2->execute();
 
     $same_url = 0;
@@ -405,8 +468,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'update_media') {
     $id = intval(isset($_POST['id']) ? $_POST['id'] : 0);
     $name = isset($_POST['name']) ? trim($_POST['name']) : '';
     if ($id <= 0 || $name === '') json_out(array('ok' => false, 'error' => 'id/name required'));
-    $stmt = $db->prepare('UPDATE media_library SET file_name=? WHERE id=?');
-    $stmt->bind_param('si', $name, $id);
+    $stmt = $db->prepare('UPDATE media_library SET file_name=? WHERE id=? AND workspace_id=?');
+    $stmt->bind_param('sii', $name, $id, $WORKSPACE_ID);
     $stmt->execute();
     json_out(array('ok' => true));
 }
@@ -414,8 +477,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'update_media') {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'copy_media') {
     $id = intval(isset($_POST['id']) ? $_POST['id'] : 0);
     if ($id <= 0) json_out(array('ok' => false, 'error' => 'id required'));
-    $stmt = $db->prepare('SELECT file_url,file_name,mime_type,file_size,folder_id FROM media_library WHERE id=?');
-    $stmt->bind_param('i', $id);
+    $stmt = $db->prepare('SELECT file_url,file_name,mime_type,file_size,folder_id FROM media_library WHERE id=? AND workspace_id=?');
+    $stmt->bind_param('ii', $id, $WORKSPACE_ID);
     $stmt->execute();
     $row = $stmt->get_result()->fetch_assoc();
     if (!$row) json_out(array('ok' => false, 'error' => 'not found'));
@@ -431,9 +494,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'copy_media') {
     if ($new_name === $row['file_name']) $new_name = $row['file_name'] . ' копия';
     $new_url = '/uploads/' . $stored_name;
     $new_size = intval(filesize($target_path));
-    $stmt2 = $db->prepare('INSERT INTO media_library (file_url,file_name,mime_type,file_size,folder_id) VALUES (?,?,?,?,?)');
+    $stmt2 = $db->prepare('INSERT INTO media_library (file_url,file_name,mime_type,file_size,folder_id,workspace_id) VALUES (?,?,?,?,?,?)');
     $folder = isset($row['folder_id']) ? intval($row['folder_id']) : null;
-    $stmt2->bind_param('sssii', $new_url, $new_name, $row['mime_type'], $new_size, $folder);
+    $stmt2->bind_param('sssiii', $new_url, $new_name, $row['mime_type'], $new_size, $folder, $WORKSPACE_ID);
     if (!$stmt2->execute()) {
         @unlink($target_path);
         json_out(array('ok' => false, 'error' => 'database write failed'));
@@ -449,8 +512,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'create_model') {
     $image_url = isset($d['image_url']) ? trim($d['image_url']) : '';
     $base_price = floatval(isset($d['base_price']) ? $d['base_price'] : 300000);
     if ($name === '') json_out(array('ok' => false, 'error' => 'Model name required'));
-    $stmt = $db->prepare('INSERT INTO models (name, image_url, base_price) VALUES (?, ?, ?)');
-    $stmt->bind_param('ssd', $name, $image_url, $base_price);
+    $stmt = $db->prepare('INSERT INTO models (name, image_url, base_price, workspace_id) VALUES (?, ?, ?, ?)');
+    $stmt->bind_param('ssdi', $name, $image_url, $base_price, $WORKSPACE_ID);
     $stmt->execute();
     json_out(array('ok' => true, 'id' => $db->insert_id));
 }
@@ -464,8 +527,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'update_model') {
     $image_url = isset($d['image_url']) ? trim($d['image_url']) : '';
     $base_price = floatval(isset($d['base_price']) ? $d['base_price'] : 300000);
     if ($id <= 0 || $name === '') json_out(array('ok' => false, 'error' => 'id/name required'));
-    $stmt = $db->prepare('UPDATE models SET name=?, image_url=?, base_price=? WHERE id=?');
-    $stmt->bind_param('ssdi', $name, $image_url, $base_price, $id);
+    $stmt = $db->prepare('UPDATE models SET name=?, image_url=?, base_price=? WHERE id=? AND workspace_id=?');
+    $stmt->bind_param('ssdii', $name, $image_url, $base_price, $id, $WORKSPACE_ID);
     $stmt->execute();
     json_out(array('ok' => true));
 }
@@ -476,8 +539,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'update_model_image') {
     $image_url = isset($d['image_url']) ? trim($d['image_url']) : '';
     $image_crop = isset($d['image_crop']) ? $d['image_crop'] : null;
     if ($id <= 0) json_out(array('ok' => false, 'error' => 'id required'));
-    $stmt = $db->prepare('UPDATE models SET image_url=?, image_crop=? WHERE id=?');
-    $stmt->bind_param('ssi', $image_url, $image_crop, $id);
+    $stmt = $db->prepare('UPDATE models SET image_url=?, image_crop=? WHERE id=? AND workspace_id=?');
+    $stmt->bind_param('ssii', $image_url, $image_crop, $id, $WORKSPACE_ID);
     $stmt->execute();
     json_out(array('ok' => true));
 }
@@ -488,8 +551,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'update_option_image') 
     $image_url = isset($d['image_url']) ? trim($d['image_url']) : '';
     $image_crop = isset($d['image_crop']) ? $d['image_crop'] : null;
     if ($id <= 0) json_out(array('ok' => false, 'error' => 'id required'));
-    $stmt = $db->prepare('UPDATE options_catalog SET image_url=?, image_crop=? WHERE id=?');
-    $stmt->bind_param('ssi', $image_url, $image_crop, $id);
+    $stmt = $db->prepare('UPDATE options_catalog SET image_url=?, image_crop=? WHERE id=? AND workspace_id=?');
+    $stmt->bind_param('ssii', $image_url, $image_crop, $id, $WORKSPACE_ID);
     $stmt->execute();
     json_out(array('ok' => true));
 }
@@ -501,22 +564,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'duplicate_model') {
 
     $db->begin_transaction();
     try {
-        $r = $db->query("SELECT * FROM models WHERE id=$src_id LIMIT 1");
+        $r = $db->query("SELECT * FROM models WHERE id=$src_id AND workspace_id=$WORKSPACE_ID LIMIT 1");
         $src = $r ? $r->fetch_assoc() : null;
         if (!$src) throw new Exception('source not found');
 
         $new_name = substr($src['name'], 0, 140) . ' — копия';
-        $stmt = $db->prepare('INSERT INTO models (name,image_url,image_crop,base_price) VALUES (?,?,?,?)');
-        $stmt->bind_param('sssd', $new_name, $src['image_url'], $src['image_crop'], $src['base_price']);
+        $stmt = $db->prepare('INSERT INTO models (name,image_url,image_crop,base_price,workspace_id) VALUES (?,?,?,?,?)');
+        $stmt->bind_param('sssdi', $new_name, $src['image_url'], $src['image_crop'], $src['base_price'], $WORKSPACE_ID);
         $stmt->execute();
         $new_id = $db->insert_id;
 
         // layouts (one-to-many)
-        $lr = $db->query("SELECT * FROM layouts WHERE model_id=$src_id ORDER BY sort_order ASC");
+        $lr = $db->query("SELECT * FROM layouts WHERE model_id=$src_id AND workspace_id=$WORKSPACE_ID ORDER BY sort_order ASC");
         if ($lr) {
-            $ls = $db->prepare('INSERT INTO layouts (model_id,name,price_modifier,sort_order) VALUES (?,?,?,?)');
+            $ls = $db->prepare('INSERT INTO layouts (model_id,name,price_modifier,sort_order,workspace_id) VALUES (?,?,?,?,?)');
             while ($l = $lr->fetch_assoc()) {
-                $ls->bind_param('isdi', $new_id, $l['name'], $l['price_modifier'], $l['sort_order']);
+                $ls->bind_param('isdii', $new_id, $l['name'], $l['price_modifier'], $l['sort_order'], $WORKSPACE_ID);
                 $ls->execute();
             }
         }
@@ -554,8 +617,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'delete_model') {
     $d = (is_array($jd) && !empty($jd)) ? $jd : $_POST;
     $id = intval(isset($d['id']) ? $d['id'] : 0);
     if ($id <= 0) json_out(array('ok' => false, 'error' => 'id required'));
-    $stmt = $db->prepare('DELETE FROM models WHERE id=?');
-    $stmt->bind_param('i', $id);
+    $stmt = $db->prepare('DELETE FROM models WHERE id=? AND workspace_id=?');
+    $stmt->bind_param('ii', $id, $WORKSPACE_ID);
     if (!$stmt->execute()) json_out(array('ok' => false, 'error' => $db->error));
     json_out(array('ok' => true));
 }
@@ -564,8 +627,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'copy_model') {
     $source_id = intval(isset($_POST['source_id']) ? $_POST['source_id'] : 0);
     if ($source_id <= 0) json_out(array('ok' => false, 'error' => 'source_id required'));
 
-    $stmt = $db->prepare('SELECT name, image_url, base_price FROM models WHERE id=?');
-    $stmt->bind_param('i', $source_id);
+    $stmt = $db->prepare('SELECT name, image_url, base_price FROM models WHERE id=? AND workspace_id=?');
+    $stmt->bind_param('ii', $source_id, $WORKSPACE_ID);
     $stmt->execute();
     $res = $stmt->get_result();
     $model = $res->fetch_assoc();
@@ -574,8 +637,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'copy_model') {
     $new_name = $model['name'] . ' копия';
     $image_url = isset($model['image_url']) ? $model['image_url'] : '';
     $base_price = isset($model['base_price']) ? floatval($model['base_price']) : 300000;
-    $stmt2 = $db->prepare('INSERT INTO models (name, image_url, base_price) VALUES (?, ?, ?)');
-    $stmt2->bind_param('ssd', $new_name, $image_url, $base_price);
+    $stmt2 = $db->prepare('INSERT INTO models (name, image_url, base_price, workspace_id) VALUES (?, ?, ?, ?)');
+    $stmt2->bind_param('ssdi', $new_name, $image_url, $base_price, $WORKSPACE_ID);
     $stmt2->execute();
     $new_id = $db->insert_id;
 
@@ -592,7 +655,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'copy_model') {
     json_out(array('ok' => true, 'id' => $new_id));
 }
 
-function save_option_models($db, $option_id) {
+// Ownership guards: every place that attaches a new row to a request-supplied
+// group_id/model_id/parent_group_id must confirm that id actually belongs to the
+// caller's own workspace first — otherwise a tenant could reference (and silently
+// corrupt) another tenant's catalog just by guessing an id, even without being able
+// to read that tenant's data directly.
+function group_owned_by_workspace($db, $group_id, $workspace_id) {
+    $stmt = $db->prepare('SELECT id FROM option_groups WHERE id=? AND workspace_id=?');
+    $stmt->bind_param('ii', $group_id, $workspace_id);
+    $stmt->execute();
+    return (bool)$stmt->get_result()->fetch_assoc();
+}
+
+function model_owned_by_workspace($db, $model_id, $workspace_id) {
+    $stmt = $db->prepare('SELECT id FROM models WHERE id=? AND workspace_id=?');
+    $stmt->bind_param('ii', $model_id, $workspace_id);
+    $stmt->execute();
+    return (bool)$stmt->get_result()->fetch_assoc();
+}
+
+function option_owned_by_workspace($db, $option_id, $workspace_id) {
+    $stmt = $db->prepare('SELECT id FROM options_catalog WHERE id=? AND workspace_id=?');
+    $stmt->bind_param('ii', $option_id, $workspace_id);
+    $stmt->execute();
+    return (bool)$stmt->get_result()->fetch_assoc();
+}
+
+function folder_owned_by_workspace($db, $folder_id, $workspace_id) {
+    $stmt = $db->prepare('SELECT id FROM media_folders WHERE id=? AND workspace_id=?');
+    $stmt->bind_param('ii', $folder_id, $workspace_id);
+    $stmt->execute();
+    return (bool)$stmt->get_result()->fetch_assoc();
+}
+
+function save_option_models($db, $option_id, $workspace_id) {
     $raw = isset($_POST['model_ids']) ? trim($_POST['model_ids']) : '';
     $db->query('DELETE FROM option_model_availability WHERE option_id=' . intval($option_id));
     if ($raw === '') return;
@@ -602,6 +698,7 @@ function save_option_models($db, $option_id) {
     foreach ($ids as $id) {
         $model_id = intval($id);
         if ($model_id <= 0) continue;
+        if (!model_owned_by_workspace($db, $model_id, $workspace_id)) continue;
         $stmt->bind_param('ii', $option_id, $model_id);
         $stmt->execute();
     }
@@ -618,11 +715,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'create_option') {
     $base_price = isset($_POST['base_price']) ? floatval($_POST['base_price']) : 0;
     if ($name === '') json_out(array('ok' => false, 'error' => 'Option name required'));
     if ($group_id <= 0) $group_id = null;
-    $stmt = $db->prepare('INSERT INTO options_catalog (group_id,name,image_url,price,description,features_json,max_quantity,base_price) VALUES (?,?,?,?,?,?,?,?)');
-    $stmt->bind_param('issdssid', $group_id, $name, $image_url, $price, $description, $features, $max_quantity, $base_price);
+    if ($group_id !== null && !group_owned_by_workspace($db, $group_id, $WORKSPACE_ID)) json_out(array('ok' => false, 'error' => 'group not found'));
+    $stmt = $db->prepare('INSERT INTO options_catalog (group_id,name,image_url,price,description,features_json,max_quantity,base_price,workspace_id) VALUES (?,?,?,?,?,?,?,?,?)');
+    $stmt->bind_param('issdssidi', $group_id, $name, $image_url, $price, $description, $features, $max_quantity, $base_price, $WORKSPACE_ID);
     $stmt->execute();
     $new_id = $db->insert_id;
-    save_option_models($db, $new_id);
+    save_option_models($db, $new_id, $WORKSPACE_ID);
     json_out(array('ok' => true, 'id' => $new_id));
 }
 
@@ -638,19 +736,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'update_option') {
     $base_price = isset($_POST['base_price']) ? floatval($_POST['base_price']) : 0;
     if ($id <= 0 || $name === '') json_out(array('ok' => false, 'error' => 'id/name required'));
     if ($group_id <= 0) $group_id = null;
-    $stmt = $db->prepare('UPDATE options_catalog SET group_id=?, name=?, image_url=?, price=?, description=?, features_json=?, max_quantity=?, base_price=? WHERE id=?');
-    $stmt->bind_param('issdssidi', $group_id, $name, $image_url, $price, $description, $features, $max_quantity, $base_price, $id);
+    if ($group_id !== null && !group_owned_by_workspace($db, $group_id, $WORKSPACE_ID)) json_out(array('ok' => false, 'error' => 'group not found'));
+    $stmt = $db->prepare('UPDATE options_catalog SET group_id=?, name=?, image_url=?, price=?, description=?, features_json=?, max_quantity=?, base_price=? WHERE id=? AND workspace_id=?');
+    $stmt->bind_param('issdssidii', $group_id, $name, $image_url, $price, $description, $features, $max_quantity, $base_price, $id, $WORKSPACE_ID);
     $stmt->execute();
-    save_option_models($db, $id);
+    save_option_models($db, $id, $WORKSPACE_ID);
     json_out(array('ok' => true));
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'delete_option') {
     $id = intval(isset($_POST['id']) ? $_POST['id'] : 0);
     if ($id <= 0) json_out(array('ok' => false, 'error' => 'id required'));
-    $db->query("DELETE FROM exclusion_rules WHERE (a_type='option' AND a_id=$id) OR (b_type='option' AND b_id=$id)");
-    $stmt = $db->prepare('DELETE FROM options_catalog WHERE id=?');
-    $stmt->bind_param('i', $id);
+    $db->query("DELETE FROM exclusion_rules WHERE workspace_id=$WORKSPACE_ID AND ((a_type='option' AND a_id=$id) OR (b_type='option' AND b_id=$id))");
+    $stmt = $db->prepare('DELETE FROM options_catalog WHERE id=? AND workspace_id=?');
+    $stmt->bind_param('ii', $id, $WORKSPACE_ID);
     if (!$stmt->execute()) json_out(array('ok' => false, 'error' => $db->error));
     json_out(array('ok' => true));
 }
@@ -658,6 +757,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'delete_option') {
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'get_page') {
     $model_id = intval(isset($_GET['model_id']) ? $_GET['model_id'] : 0);
     if ($model_id <= 0) json_out(array('ok' => false, 'error' => 'model_id required'));
+    if (!model_owned_by_workspace($db, $model_id, $WORKSPACE_ID)) json_out(array('ok' => false, 'error' => 'model not found'));
     $stmt = $db->prepare('SELECT page_json FROM model_pages WHERE model_id=?');
     $stmt->bind_param('i', $model_id);
     $stmt->execute();
@@ -670,6 +770,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'save_page') {
     $model_id = intval(isset($_POST['model_id']) ? $_POST['model_id'] : 0);
     $page_json = isset($_POST['page_json']) ? $_POST['page_json'] : '';
     if ($model_id <= 0) json_out(array('ok' => false, 'error' => 'model_id required'));
+    if (!model_owned_by_workspace($db, $model_id, $WORKSPACE_ID)) json_out(array('ok' => false, 'error' => 'model not found'));
 
     $stmt = $db->prepare('SELECT model_id FROM model_pages WHERE model_id=?');
     $stmt->bind_param('i', $model_id);
@@ -754,17 +855,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'upload_image') {
     $file_url = '/uploads/' . $name;
     $folder_raw = isset($_POST['folder_id']) ? trim($_POST['folder_id']) : '';
     $size = intval(filesize($target));
-    if ($folder_raw === '' || $folder_raw === '0') {
-        $stmtm = $db->prepare('INSERT INTO media_library (file_url,file_name,mime_type,file_size,folder_id) VALUES (?,?,?, ?, NULL)');
-        $stmtm->bind_param('sssi', $file_url, $name, $mime, $size);
+    if ($folder_raw === '' || $folder_raw === '0' || !folder_owned_by_workspace($db, intval($folder_raw), $WORKSPACE_ID)) {
+        $stmtm = $db->prepare('INSERT INTO media_library (file_url,file_name,mime_type,file_size,folder_id,workspace_id) VALUES (?,?,?,?,NULL,?)');
+        $stmtm->bind_param('sssii', $file_url, $name, $mime, $size, $WORKSPACE_ID);
         if (!$stmtm->execute()) {
             @unlink($target);
             json_out(array('ok' => false, 'error' => 'database write failed'));
         }
     } else {
         $folder_id = intval($folder_raw);
-        $stmtm = $db->prepare('INSERT INTO media_library (file_url,file_name,mime_type,file_size,folder_id) VALUES (?,?,?,?,?)');
-        $stmtm->bind_param('sssii', $file_url, $name, $mime, $size, $folder_id);
+        $stmtm = $db->prepare('INSERT INTO media_library (file_url,file_name,mime_type,file_size,folder_id,workspace_id) VALUES (?,?,?,?,?,?)');
+        $stmtm->bind_param('sssiii', $file_url, $name, $mime, $size, $folder_id, $WORKSPACE_ID);
         if (!$stmtm->execute()) {
             @unlink($target);
             json_out(array('ok' => false, 'error' => 'database write failed'));
@@ -779,8 +880,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'upload_image') {
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'get_layouts') {
     $model_id = intval(isset($_GET['model_id']) ? $_GET['model_id'] : 0);
     if ($model_id <= 0) json_out(array('ok' => false, 'error' => 'model_id required'));
-    $stmt = $db->prepare('SELECT id, model_id, name, price_modifier, sort_order FROM layouts WHERE model_id=? ORDER BY sort_order ASC, id ASC');
-    $stmt->bind_param('i', $model_id);
+    $stmt = $db->prepare('SELECT id, model_id, name, price_modifier, sort_order FROM layouts WHERE model_id=? AND workspace_id=? ORDER BY sort_order ASC, id ASC');
+    $stmt->bind_param('ii', $model_id, $WORKSPACE_ID);
     $stmt->execute();
     $result = $stmt->get_result();
     $rows = array();
@@ -797,8 +898,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'create_layout') {
     $price_modifier = floatval(isset($data['price_modifier']) ? $data['price_modifier'] : 0);
     $sort_order = intval(isset($data['sort_order']) ? $data['sort_order'] : 0);
     if ($model_id <= 0 || $name === '') json_out(array('ok' => false, 'error' => 'model_id and name required'));
-    $stmt = $db->prepare('INSERT INTO layouts (model_id, name, price_modifier, sort_order) VALUES (?, ?, ?, ?)');
-    $stmt->bind_param('isdi', $model_id, $name, $price_modifier, $sort_order);
+    if (!model_owned_by_workspace($db, $model_id, $WORKSPACE_ID)) json_out(array('ok' => false, 'error' => 'model not found'));
+    $stmt = $db->prepare('INSERT INTO layouts (model_id, name, price_modifier, sort_order, workspace_id) VALUES (?, ?, ?, ?, ?)');
+    $stmt->bind_param('isdii', $model_id, $name, $price_modifier, $sort_order, $WORKSPACE_ID);
     $stmt->execute();
     json_out(array('ok' => true, 'id' => $db->insert_id));
 }
@@ -811,8 +913,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'update_layout') {
     $name = isset($data['name']) ? trim($data['name']) : '';
     $price_modifier = floatval(isset($data['price_modifier']) ? $data['price_modifier'] : 0);
     if ($id <= 0 || $name === '') json_out(array('ok' => false, 'error' => 'id and name required'));
-    $stmt = $db->prepare('UPDATE layouts SET name=?, price_modifier=? WHERE id=?');
-    $stmt->bind_param('sdi', $name, $price_modifier, $id);
+    $stmt = $db->prepare('UPDATE layouts SET name=?, price_modifier=? WHERE id=? AND workspace_id=?');
+    $stmt->bind_param('sdii', $name, $price_modifier, $id, $WORKSPACE_ID);
     $stmt->execute();
     json_out(array('ok' => true));
 }
@@ -823,8 +925,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'delete_layout') {
     if (!$data) $data = $_POST;
     $id = intval(isset($data['id']) ? $data['id'] : 0);
     if ($id <= 0) json_out(array('ok' => false, 'error' => 'id required'));
-    $stmt = $db->prepare('DELETE FROM layouts WHERE id=?');
-    $stmt->bind_param('i', $id);
+    $stmt = $db->prepare('DELETE FROM layouts WHERE id=? AND workspace_id=?');
+    $stmt->bind_param('ii', $id, $WORKSPACE_ID);
     $stmt->execute();
     json_out(array('ok' => true));
 }
@@ -837,8 +939,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'update_group_selection
     $selection_type = isset($data['selection_type']) ? trim($data['selection_type']) : 'multiple';
     if (!in_array($selection_type, array('single', 'multiple'))) $selection_type = 'multiple';
     if ($id <= 0) json_out(array('ok' => false, 'error' => 'id required'));
-    $stmt = $db->prepare('UPDATE option_groups SET selection_type=? WHERE id=?');
-    $stmt->bind_param('si', $selection_type, $id);
+    $stmt = $db->prepare('UPDATE option_groups SET selection_type=? WHERE id=? AND workspace_id=?');
+    $stmt->bind_param('sii', $selection_type, $id, $WORKSPACE_ID);
     $stmt->execute();
     json_out(array('ok' => true));
 }
@@ -848,8 +950,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'update_group_required'
     $id = intval(isset($data['id']) ? $data['id'] : 0);
     $required = isset($data['required']) ? (intval($data['required']) ? 1 : 0) : 1;
     if ($id <= 0) json_out(array('ok' => false, 'error' => 'id required'));
-    $stmt = $db->prepare('UPDATE option_groups SET required=? WHERE id=?');
-    $stmt->bind_param('ii', $required, $id);
+    $stmt = $db->prepare('UPDATE option_groups SET required=? WHERE id=? AND workspace_id=?');
+    $stmt->bind_param('iii', $required, $id, $WORKSPACE_ID);
     if (!$stmt->execute()) json_out(array('ok' => false, 'error' => $db->error));
     json_out(array('ok' => true));
 }
@@ -859,8 +961,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'update_group_enlarge_p
     $id = intval(isset($data['id']) ? $data['id'] : 0);
     $enlarge = isset($data['enlarge_photo']) ? (intval($data['enlarge_photo']) ? 1 : 0) : 0;
     if ($id <= 0) json_out(array('ok' => false, 'error' => 'id required'));
-    $stmt = $db->prepare('UPDATE option_groups SET enlarge_photo=? WHERE id=?');
-    $stmt->bind_param('ii', $enlarge, $id);
+    $stmt = $db->prepare('UPDATE option_groups SET enlarge_photo=? WHERE id=? AND workspace_id=?');
+    $stmt->bind_param('iii', $enlarge, $id, $WORKSPACE_ID);
     if (!$stmt->execute()) json_out(array('ok' => false, 'error' => $db->error));
     json_out(array('ok' => true));
 }
@@ -874,21 +976,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'update_group_parent') 
 
     // Verify the target group still exists — if it was deleted (e.g. concurrently, during
     // a duplicate cleanup) the UPDATE below would silently affect zero rows and still "succeed".
-    $chk = $db->prepare('SELECT id FROM option_groups WHERE id=?');
-    $chk->bind_param('i', $id);
-    $chk->execute();
-    if (!$chk->get_result()->fetch_assoc()) json_out(array('ok' => false, 'error' => 'group no longer exists'));
+    if (!group_owned_by_workspace($db, $id, $WORKSPACE_ID)) json_out(array('ok' => false, 'error' => 'group no longer exists'));
 
     if ($parent_id > 0) {
-        $chkp = $db->prepare('SELECT id FROM option_groups WHERE id=?');
-        $chkp->bind_param('i', $parent_id);
-        $chkp->execute();
-        if (!$chkp->get_result()->fetch_assoc()) json_out(array('ok' => false, 'error' => 'parent group no longer exists'));
-        $stmt = $db->prepare('UPDATE option_groups SET parent_group_id=? WHERE id=?');
-        $stmt->bind_param('ii', $parent_id, $id);
+        if (!group_owned_by_workspace($db, $parent_id, $WORKSPACE_ID)) json_out(array('ok' => false, 'error' => 'parent group no longer exists'));
+        $stmt = $db->prepare('UPDATE option_groups SET parent_group_id=? WHERE id=? AND workspace_id=?');
+        $stmt->bind_param('iii', $parent_id, $id, $WORKSPACE_ID);
     } else {
-        $stmt = $db->prepare('UPDATE option_groups SET parent_group_id=NULL WHERE id=?');
-        $stmt->bind_param('i', $id);
+        $stmt = $db->prepare('UPDATE option_groups SET parent_group_id=NULL WHERE id=? AND workspace_id=?');
+        $stmt->bind_param('ii', $id, $WORKSPACE_ID);
     }
     if (!$stmt->execute()) json_out(array('ok' => false, 'error' => $db->error));
     json_out(array('ok' => true));
@@ -900,8 +996,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'update_group_models') 
     if ($id <= 0) json_out(array('ok' => false, 'error' => 'id required'));
     $model_ids = isset($data['model_ids']) && is_array($data['model_ids']) ? array_values(array_map('intval', $data['model_ids'])) : null;
     $encoded = $model_ids === null ? null : json_encode($model_ids);
-    $stmt = $db->prepare('UPDATE option_groups SET model_ids=? WHERE id=?');
-    $stmt->bind_param('si', $encoded, $id);
+    $stmt = $db->prepare('UPDATE option_groups SET model_ids=? WHERE id=? AND workspace_id=?');
+    $stmt->bind_param('sii', $encoded, $id, $WORKSPACE_ID);
     if (!$stmt->execute()) json_out(array('ok' => false, 'error' => $db->error));
     json_out(array('ok' => true));
 }
@@ -913,25 +1009,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'duplicate_group') {
 
     $db->begin_transaction();
     try {
-        $r = $db->query("SELECT * FROM option_groups WHERE id=$src_id LIMIT 1");
+        $r = $db->query("SELECT * FROM option_groups WHERE id=$src_id AND workspace_id=$WORKSPACE_ID LIMIT 1");
         $src = $r ? $r->fetch_assoc() : null;
         if (!$src) throw new Exception('source not found');
 
         $new_name = substr($src['name'], 0, 150) . ' — копия';
-        $stmt = $db->prepare('INSERT INTO option_groups (name,sort_order,selection_type,parent_group_id,required,enlarge_photo,block_type,model_ids) VALUES (?,?,?,?,?,?,?,?)');
-        $stmt->bind_param('sisiiiss', $new_name, $src['sort_order'], $src['selection_type'], $src['parent_group_id'], $src['required'], $src['enlarge_photo'], $src['block_type'], $src['model_ids']);
+        $stmt = $db->prepare('INSERT INTO option_groups (name,sort_order,selection_type,parent_group_id,required,enlarge_photo,block_type,model_ids,workspace_id) VALUES (?,?,?,?,?,?,?,?,?)');
+        $stmt->bind_param('sisiiissi', $new_name, $src['sort_order'], $src['selection_type'], $src['parent_group_id'], $src['required'], $src['enlarge_photo'], $src['block_type'], $src['model_ids'], $WORKSPACE_ID);
         $stmt->execute();
         $new_group_id = $db->insert_id;
 
-        $or = $db->query("SELECT * FROM options_catalog WHERE group_id=$src_id ORDER BY sort_order ASC");
+        $or = $db->query("SELECT * FROM options_catalog WHERE group_id=$src_id AND workspace_id=$WORKSPACE_ID ORDER BY sort_order ASC");
         if ($or) {
-            $os = $db->prepare('INSERT INTO options_catalog (group_id,name,image_url,image_crop,price,base_price,description,features_json,popup_options,is_default,sort_order,max_quantity,max_length,max_width) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+            $os = $db->prepare('INSERT INTO options_catalog (group_id,name,image_url,image_crop,price,base_price,description,features_json,popup_options,is_default,sort_order,max_quantity,max_length,max_width,workspace_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
             while ($opt = $or->fetch_assoc()) {
                 $os->bind_param(
-                    'isssddsssiiiii',
+                    'isssddsssiiiiii',
                     $new_group_id, $opt['name'], $opt['image_url'], $opt['image_crop'], $opt['price'], $opt['base_price'],
                     $opt['description'], $opt['features_json'], $opt['popup_options'], $opt['is_default'], $opt['sort_order'],
-                    $opt['max_quantity'], $opt['max_length'], $opt['max_width']
+                    $opt['max_quantity'], $opt['max_length'], $opt['max_width'], $WORKSPACE_ID
                 );
                 $os->execute();
                 $new_option_id = $db->insert_id;
@@ -961,10 +1057,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'reorder_models') {
     if (!is_array($items) || count($items) === 0) json_out(array('ok' => false, 'error' => 'items required'));
     $db->begin_transaction();
     try {
-        $stmt = $db->prepare('UPDATE models SET sort_order=? WHERE id=?');
+        $stmt = $db->prepare('UPDATE models SET sort_order=? WHERE id=? AND workspace_id=?');
         foreach ($items as $item) {
             $ord = intval($item['sort_order']); $id = intval($item['id']);
-            $stmt->bind_param('ii', $ord, $id); $stmt->execute();
+            $stmt->bind_param('iii', $ord, $id, $WORKSPACE_ID); $stmt->execute();
         }
         $db->commit();
         json_out(array('ok' => true));
@@ -977,10 +1073,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'reorder_groups') {
     if (!is_array($items) || count($items) === 0) json_out(array('ok' => false, 'error' => 'items required'));
     $db->begin_transaction();
     try {
-        $stmt = $db->prepare('UPDATE option_groups SET sort_order=? WHERE id=?');
+        $stmt = $db->prepare('UPDATE option_groups SET sort_order=? WHERE id=? AND workspace_id=?');
         foreach ($items as $item) {
             $ord = intval($item['sort_order']); $id = intval($item['id']);
-            $stmt->bind_param('ii', $ord, $id); $stmt->execute();
+            $stmt->bind_param('iii', $ord, $id, $WORKSPACE_ID); $stmt->execute();
         }
         $db->commit();
         json_out(array('ok' => true));
@@ -993,12 +1089,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'reorder_options') {
     if (!is_array($items) || count($items) === 0) json_out(array('ok' => false, 'error' => 'items required'));
     $db->begin_transaction();
     try {
-        $stmt = $db->prepare('UPDATE options_catalog SET sort_order=? WHERE id=?');
+        $stmt = $db->prepare('UPDATE options_catalog SET sort_order=? WHERE id=? AND workspace_id=?');
         foreach ($items as $item) {
             $id = intval($item['id']);
             $ord = intval($item['sort_order']);
             if ($id <= 0) continue;
-            $stmt->bind_param('ii', $ord, $id);
+            $stmt->bind_param('iii', $ord, $id, $WORKSPACE_ID);
             $stmt->execute();
         }
         $db->commit();
@@ -1019,15 +1115,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'create_group') {
     $block_type = isset($data['block_type']) ? trim($data['block_type']) : 'options';
     if (!in_array($block_type, ['options','text','photo','photo2','gallery','video','delivery','popup','contacts'])) $block_type = 'options';
     if ($parent_id > 0) {
-        $chkp = $db->prepare('SELECT id FROM option_groups WHERE id=?');
-        $chkp->bind_param('i', $parent_id);
-        $chkp->execute();
-        if (!$chkp->get_result()->fetch_assoc()) json_out(array('ok' => false, 'error' => 'parent group no longer exists'));
-        $stmt = $db->prepare('INSERT INTO option_groups (name, sort_order, parent_group_id, block_type) VALUES (?, ?, ?, ?)');
-        $stmt->bind_param('siis', $name, $sort, $parent_id, $block_type);
+        if (!group_owned_by_workspace($db, $parent_id, $WORKSPACE_ID)) json_out(array('ok' => false, 'error' => 'parent group no longer exists'));
+        $stmt = $db->prepare('INSERT INTO option_groups (name, sort_order, parent_group_id, block_type, workspace_id) VALUES (?, ?, ?, ?, ?)');
+        $stmt->bind_param('siisi', $name, $sort, $parent_id, $block_type, $WORKSPACE_ID);
     } else {
-        $stmt = $db->prepare('INSERT INTO option_groups (name, sort_order, block_type) VALUES (?, ?, ?)');
-        $stmt->bind_param('sis', $name, $sort, $block_type);
+        $stmt = $db->prepare('INSERT INTO option_groups (name, sort_order, block_type, workspace_id) VALUES (?, ?, ?, ?)');
+        $stmt->bind_param('sisi', $name, $sort, $block_type, $WORKSPACE_ID);
     }
     if (!$stmt->execute()) json_out(array('ok' => false, 'error' => $db->error));
     json_out(array('ok' => true, 'id' => $db->insert_id));
@@ -1037,25 +1130,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'delete_group') {
     $data = json_decode(file_get_contents('php://input'), true);
     $id = intval(isset($data['id']) ? $data['id'] : 0);
     if ($id <= 0) json_out(array('ok' => false, 'error' => 'id required'));
+    if (!group_owned_by_workspace($db, $id, $WORKSPACE_ID)) json_out(array('ok' => false, 'error' => 'group not found'));
 
     $db->begin_transaction();
     try {
         // Deleting a wrapper block must never destroy the blocks nested inside it —
         // promote its direct children back to top-level instead of cascading the delete.
-        $db->query("UPDATE option_groups SET parent_group_id=NULL WHERE parent_group_id=$id");
+        $db->query("UPDATE option_groups SET parent_group_id=NULL WHERE parent_group_id=$id AND workspace_id=$WORKSPACE_ID");
 
         // Only this group's own options are removed (a wrapper normally has none of its own).
         $option_ids = array();
-        $res = $db->query("SELECT id FROM options_catalog WHERE group_id=$id");
+        $res = $db->query("SELECT id FROM options_catalog WHERE group_id=$id AND workspace_id=$WORKSPACE_ID");
         while ($row = $res->fetch_assoc()) $option_ids[] = intval($row['id']);
 
         if (count($option_ids) > 0) {
             $opt_in = implode(',', $option_ids);
-            $db->query("DELETE FROM exclusion_rules WHERE (a_type='option' AND a_id IN ($opt_in)) OR (b_type='option' AND b_id IN ($opt_in))");
-            $db->query("DELETE FROM options_catalog WHERE id IN ($opt_in)");
+            $db->query("DELETE FROM exclusion_rules WHERE workspace_id=$WORKSPACE_ID AND ((a_type='option' AND a_id IN ($opt_in)) OR (b_type='option' AND b_id IN ($opt_in)))");
+            $db->query("DELETE FROM options_catalog WHERE id IN ($opt_in) AND workspace_id=$WORKSPACE_ID");
         }
-        $db->query("DELETE FROM exclusion_rules WHERE (a_type='group' AND a_id=$id) OR (b_type='group' AND b_id=$id)");
-        $db->query("DELETE FROM option_groups WHERE id=$id");
+        $db->query("DELETE FROM exclusion_rules WHERE workspace_id=$WORKSPACE_ID AND ((a_type='group' AND a_id=$id) OR (b_type='group' AND b_id=$id))");
+        $db->query("DELETE FROM option_groups WHERE id=$id AND workspace_id=$WORKSPACE_ID");
 
         $db->commit();
         json_out(array('ok' => true));
@@ -1085,8 +1179,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'create_exclusion') {
         json_out(array('ok' => false, 'error' => 'cannot exclude itself'));
     }
     list($a_type, $a_id, $b_type, $b_id) = normalize_pair($a_type, $a_id, $b_type, $b_id);
-    $stmt = $db->prepare('INSERT IGNORE INTO exclusion_rules (a_type,a_id,b_type,b_id) VALUES (?,?,?,?)');
-    $stmt->bind_param('sisi', $a_type, $a_id, $b_type, $b_id);
+    $stmt = $db->prepare('INSERT IGNORE INTO exclusion_rules (a_type,a_id,b_type,b_id,workspace_id) VALUES (?,?,?,?,?)');
+    $stmt->bind_param('sisii', $a_type, $a_id, $b_type, $b_id, $WORKSPACE_ID);
     $stmt->execute();
     json_out(array('ok' => true, 'id' => $db->insert_id));
 }
@@ -1095,8 +1189,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'delete_exclusion') {
     $data = json_decode(file_get_contents('php://input'), true);
     $id = isset($data['id']) ? intval($data['id']) : 0;
     if ($id > 0) {
-        $stmt = $db->prepare('DELETE FROM exclusion_rules WHERE id=?');
-        $stmt->bind_param('i', $id);
+        $stmt = $db->prepare('DELETE FROM exclusion_rules WHERE id=? AND workspace_id=?');
+        $stmt->bind_param('ii', $id, $WORKSPACE_ID);
         $stmt->execute();
         json_out(array('ok' => true));
     }
@@ -1106,8 +1200,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'delete_exclusion') {
     $b_id   = intval(isset($data['b_id']) ? $data['b_id'] : 0);
     if ($a_id <= 0 || $b_id <= 0) json_out(array('ok' => false, 'error' => 'id or a/b pair required'));
     list($a_type, $a_id, $b_type, $b_id) = normalize_pair($a_type, $a_id, $b_type, $b_id);
-    $stmt = $db->prepare('DELETE FROM exclusion_rules WHERE a_type=? AND a_id=? AND b_type=? AND b_id=?');
-    $stmt->bind_param('sisi', $a_type, $a_id, $b_type, $b_id);
+    $stmt = $db->prepare('DELETE FROM exclusion_rules WHERE a_type=? AND a_id=? AND b_type=? AND b_id=? AND workspace_id=?');
+    $stmt->bind_param('sisii', $a_type, $a_id, $b_type, $b_id, $WORKSPACE_ID);
     $stmt->execute();
     json_out(array('ok' => true));
 }
@@ -1122,17 +1216,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'create_option_json') {
     $image_url = isset($data['image_url']) ? trim($data['image_url']) : '';
     if ($name === '') json_out(array('ok' => false, 'error' => 'name required'));
     if ($group_id <= 0) json_out(array('ok' => false, 'error' => 'group_id required'));
+    if (!group_owned_by_workspace($db, $group_id, $WORKSPACE_ID)) json_out(array('ok' => false, 'error' => 'group not found'));
     $max_quantity = isset($data['max_quantity']) ? max(1, intval($data['max_quantity'])) : 1;
     $max_length = isset($data['max_length']) ? max(0, intval($data['max_length'])) : 0;
     $max_width = isset($data['max_width']) ? max(0, intval($data['max_width'])) : 0;
     $base_price = isset($data['base_price']) ? floatval($data['base_price']) : 0;
     $is_default = (!empty($data['is_default'])) ? 1 : 0;
-    $stmt = $db->prepare('INSERT INTO options_catalog (group_id,name,image_url,price,description,features_json,max_quantity,max_length,max_width,base_price,is_default) VALUES (?,?,?,?,?,?,?,?,?,?,?)');
+    $stmt = $db->prepare('INSERT INTO options_catalog (group_id,name,image_url,price,description,features_json,max_quantity,max_length,max_width,base_price,is_default,workspace_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)');
     $empty = ''; $features = '[]';
-    $stmt->bind_param('issdssiiidi', $group_id, $name, $image_url, $price, $empty, $features, $max_quantity, $max_length, $max_width, $base_price, $is_default);
+    $stmt->bind_param('issdssiiidii', $group_id, $name, $image_url, $price, $empty, $features, $max_quantity, $max_length, $max_width, $base_price, $is_default, $WORKSPACE_ID);
     $stmt->execute();
     $new_id = $db->insert_id;
-    if ($model_id > 0) {
+    if ($model_id > 0 && model_owned_by_workspace($db, $model_id, $WORKSPACE_ID)) {
         $stmt2 = $db->prepare('INSERT IGNORE INTO option_model_availability (option_id, model_id, is_active) VALUES (?, ?, 1)');
         $stmt2->bind_param('ii', $new_id, $model_id);
         $stmt2->execute();
@@ -1185,9 +1280,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'update_option_json') {
         $types .= 's';
         $values[] = $data['popup_options'] !== null ? json_encode($data['popup_options']) : null;
     }
-    $types .= 'i';
+    $types .= 'ii';
     $values[] = $id;
-    $stmt = $db->prepare('UPDATE options_catalog SET ' . implode(', ', $set) . ' WHERE id=?');
+    $values[] = $WORKSPACE_ID;
+    $stmt = $db->prepare('UPDATE options_catalog SET ' . implode(', ', $set) . ' WHERE id=? AND workspace_id=?');
     $stmt->bind_param($types, ...$values);
     $stmt->execute();
     json_out(array('ok' => true));
@@ -1197,9 +1293,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'delete_option_json') {
     $data = json_decode(file_get_contents('php://input'), true);
     $id = intval(isset($data['id']) ? $data['id'] : 0);
     if ($id <= 0) json_out(array('ok' => false, 'error' => 'id required'));
-    $db->query("DELETE FROM exclusion_rules WHERE (a_type='option' AND a_id=$id) OR (b_type='option' AND b_id=$id)");
-    $stmt = $db->prepare('DELETE FROM options_catalog WHERE id=?');
-    $stmt->bind_param('i', $id);
+    $db->query("DELETE FROM exclusion_rules WHERE workspace_id=$WORKSPACE_ID AND ((a_type='option' AND a_id=$id) OR (b_type='option' AND b_id=$id))");
+    $stmt = $db->prepare('DELETE FROM options_catalog WHERE id=? AND workspace_id=?');
+    $stmt->bind_param('ii', $id, $WORKSPACE_ID);
     if (!$stmt->execute()) json_out(array('ok' => false, 'error' => $db->error));
     json_out(array('ok' => true));
 }
@@ -1211,6 +1307,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'toggle_option_active')
     $model_id  = intval(isset($data['model_id'])  ? $data['model_id']  : 0);
     $is_active = intval(isset($data['is_active'])  ? $data['is_active']  : 1) ? 1 : 0;
     if ($option_id <= 0 || $model_id <= 0) json_out(array('ok' => false, 'error' => 'option_id and model_id required'));
+    if (!option_owned_by_workspace($db, $option_id, $WORKSPACE_ID) || !model_owned_by_workspace($db, $model_id, $WORKSPACE_ID)) {
+        json_out(array('ok' => false, 'error' => 'not found'));
+    }
     $stmt = $db->prepare('UPDATE option_model_availability SET is_active=? WHERE option_id=? AND model_id=?');
     $stmt->bind_param('iii', $is_active, $option_id, $model_id);
     $stmt->execute();
@@ -1226,6 +1325,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'set_option_model_photo
     $image_url  = isset($data['image_url']) ? trim($data['image_url']) : '';
     $image_crop = isset($data['image_crop']) ? trim($data['image_crop']) : '';
     if ($option_id <= 0 || $model_id <= 0) json_out(array('ok' => false, 'error' => 'option_id and model_id required'));
+    if (!option_owned_by_workspace($db, $option_id, $WORKSPACE_ID) || !model_owned_by_workspace($db, $model_id, $WORKSPACE_ID)) {
+        json_out(array('ok' => false, 'error' => 'not found'));
+    }
     $image_url_val  = $image_url === ''  ? null : $image_url;
     $image_crop_val = $image_crop === '' ? null : $image_crop;
     $stmt = $db->prepare('INSERT INTO option_model_availability (option_id, model_id, image_url, image_crop) VALUES (?,?,?,?)
@@ -1271,6 +1373,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'create_calculation') {
     }
     $account = isset($body['account']) ? preg_replace('/[^0-9]/', '', strval($body['account'])) : '';
     if ($model_id <= 0) json_out(array('ok' => false, 'error' => 'model_id required'));
+    if (!model_owned_by_workspace($db, $model_id, $WORKSPACE_ID)) json_out(array('ok' => false, 'error' => 'model not found'));
     $slug = bin2hex(random_bytes(12));
     $model_bp_stmt = $db->prepare('SELECT base_price FROM models WHERE id=? LIMIT 1');
     $model_bp_stmt->bind_param('i', $model_id);
@@ -1282,8 +1385,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'create_calculation') {
     if (!empty($option_dimensions)) $snapshot_data['option_dimensions'] = $option_dimensions;
     if ($account !== '') $snapshot_data['account'] = $account;
     $snapshot = json_encode($snapshot_data);
-    $stmt = $db->prepare('INSERT INTO calculations (public_slug, config_snapshot, total_price) VALUES (?, ?, ?)');
-    $stmt->bind_param('ssd', $slug, $snapshot, $total_price);
+    $stmt = $db->prepare('INSERT INTO calculations (public_slug, config_snapshot, total_price, workspace_id) VALUES (?, ?, ?, ?)');
+    $stmt->bind_param('ssdi', $slug, $snapshot, $total_price, $WORKSPACE_ID);
     $stmt->execute();
     json_out(array('ok' => true, 'id' => $db->insert_id, 'public_slug' => $slug));
 }
@@ -1296,6 +1399,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'get_calculation') {
     $stmt->execute();
     $calc = $stmt->get_result()->fetch_assoc();
     if (!$calc) json_out(array('ok' => false, 'error' => 'not found'));
+    // Not gated by the X-Workspace-ID header (see the top-of-file note) — the fixed offer
+    // is looked up by its own unguessable slug, and every downstream lookup below is scoped
+    // to the workspace the calculation itself was created under, not the caller's header.
+    $calc_workspace_id = intval($calc['workspace_id']);
     $snapshot = json_decode($calc['config_snapshot'], true);
     $model_id = intval($snapshot['model_id']);
     $layout_id = intval($snapshot['layout_id']);
@@ -1309,12 +1416,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'get_calculation') {
         foreach ((array)$snapshot['selected_option_ids'] as $oid) $qty_by_id[intval($oid)] = 1;
     }
     $option_ids = array_keys($qty_by_id);
-    $stmt2 = $db->prepare('SELECT id, name, image_url, base_price FROM models WHERE id=? LIMIT 1');
-    $stmt2->bind_param('i', $model_id);
+    $stmt2 = $db->prepare('SELECT id, name, image_url, base_price FROM models WHERE id=? AND workspace_id=? LIMIT 1');
+    $stmt2->bind_param('ii', $model_id, $calc_workspace_id);
     $stmt2->execute();
     $model = $stmt2->get_result()->fetch_assoc();
-    $stmt3 = $db->prepare('SELECT id, name FROM layouts WHERE id=? LIMIT 1');
-    $stmt3->bind_param('i', $layout_id);
+    $stmt3 = $db->prepare('SELECT id, name FROM layouts WHERE id=? AND workspace_id=? LIMIT 1');
+    $stmt3->bind_param('ii', $layout_id, $calc_workspace_id);
     $stmt3->execute();
     $layout = $stmt3->get_result()->fetch_assoc();
     $selected_options = array();
@@ -1327,7 +1434,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'get_calculation') {
             FROM options_catalog o
             LEFT JOIN option_groups g ON g.id=o.group_id
             LEFT JOIN option_model_availability oma ON oma.option_id=o.id AND oma.model_id=$model_id
-            WHERE o.id IN ($placeholders)
+            WHERE o.workspace_id=$calc_workspace_id AND o.id IN ($placeholders)
             ORDER BY COALESCE(g.sort_order,9999) ASC, o.sort_order ASC, o.id ASC");
         $stmt4->bind_param($types, ...$option_ids);
         $stmt4->execute();

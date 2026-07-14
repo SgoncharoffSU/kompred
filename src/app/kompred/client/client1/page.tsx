@@ -135,7 +135,10 @@ function parseCropSafe(raw: string | null | undefined): CropRect | null {
 
 // ── Raw PHP shapes ───────────────────────────────────────────────────────────
 
-const PHP_STATIC_BASE = 'http://159.194.225.55:8080'
+// Image bytes are fetched server-side by /api/img-proxy, which runs on the same box as the
+// PHP backend — so this must stay a loopback address, never the public IP (port 8080 there
+// is firewalled to localhost-only).
+const PHP_STATIC_BASE = 'http://127.0.0.1:8080'
 
 function normalizeImageUrl(url: string): string {
   if (!url) return ''
@@ -801,6 +804,128 @@ function ClassicDesign(props: DesignProps) {
     if (offerLink && offerRef.current) offerRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   }, [offerLink])
 
+  const photoBlock = (
+    <div className="relative overflow-hidden rounded-2xl shadow-card">
+      {previewImageUrl ? (
+        <>
+          <div key={previewImageUrl} className="aspect-square w-full transition-opacity duration-500">
+            <CroppedImage src={previewImageUrl} crop={parseCropSafe(selectedModel?.image_crop)} className="aspect-square w-full object-cover" />
+          </div>
+          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/30 to-transparent px-5 pb-5 pt-16">
+            {workspaceName && <div className="text-[10px] font-semibold uppercase tracking-widest text-white/50">{workspaceName}</div>}
+            {selectedModel && <div className="mt-0.5 text-lg font-bold leading-tight text-white">{selectedModel.name}</div>}
+            {selectedLayout && <div className="mt-0.5 text-sm text-white/65">{selectedLayout.name}</div>}
+          </div>
+        </>
+      ) : (
+        <div className="flex aspect-square flex-col items-center justify-center bg-[#e8ddd3] dark:bg-[#2e2820]">
+          <div className="text-7xl opacity-15">🛁</div>
+          <div className="mt-4 text-sm font-semibold text-[#7a6f66] dark:text-[#9a8f87]">{selectedModel?.name || 'Выберите модель'}</div>
+          <div className="mt-1 text-xs text-[#b0a499] dark:text-[#5a5048]">Добавьте фото модели в админке</div>
+        </div>
+      )}
+    </div>
+  )
+
+  const visibleContactBlocks = contactBlocks.filter((b) => {
+    const d = b.data
+    return d.phone || d.telegram || d.whatsapp || d.email || d.address || d.note
+  })
+
+  const contactsCards = visibleContactBlocks.map((block) => {
+    const d = block.data
+    const links: { href: string; label: string; icon: React.ReactNode }[] = []
+    if (d.phone)
+      links.push({
+        href: `tel:${d.phone.replace(/\s/g, '')}`,
+        label: d.phone,
+        icon: (
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M22 16.92v3a2 2 0 0 1-2.18 2A19.79 19.79 0 0 1 11.39 19a19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" />
+          </svg>
+        ),
+      })
+    if (d.telegram)
+      links.push({
+        href: d.telegram.startsWith('http') ? d.telegram : `https://t.me/${d.telegram.replace(/^@/, '')}`,
+        label: d.telegram,
+        icon: (
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.248-1.97 9.286c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.871 4.326-2.962-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.833.935z" />
+          </svg>
+        ),
+      })
+    if (d.whatsapp)
+      links.push({
+        href: `https://wa.me/${d.whatsapp.replace(/\D/g, '')}`,
+        label: d.whatsapp,
+        icon: (
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413z" />
+          </svg>
+        ),
+      })
+    if (d.email)
+      links.push({
+        href: `mailto:${d.email}`,
+        label: d.email,
+        icon: (
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+            <polyline points="22,6 12,13 2,6" />
+          </svg>
+        ),
+      })
+    if (d.address)
+      links.push({
+        href: `https://yandex.ru/maps/?text=${encodeURIComponent(d.address)}`,
+        label: d.address,
+        icon: (
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+            <circle cx="12" cy="10" r="3" />
+          </svg>
+        ),
+      })
+
+    return (
+      <div key={block.id} className="overflow-hidden rounded-2xl border border-[#e0d5c9] dark:border-[#38322a] bg-white dark:bg-[#252119] shadow-card">
+        <div className="border-b border-[#e0d5c9] dark:border-[#38322a] px-5 py-3.5">
+          <span className="text-xs font-semibold uppercase tracking-widest text-[#7a6f66] dark:text-[#9a8f87]">{block.title || 'Контакты'}</span>
+        </div>
+        <div className="divide-y divide-[#e0d5c9] dark:divide-[#38322a]">
+          {links.map((link, i) => (
+            <a
+              key={i}
+              href={link.href}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-3 px-5 py-3.5 transition-colors hover:bg-[#f8f4f0] dark:hover:bg-[#1f1c16] group"
+            >
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#0d5a52]/10 dark:bg-[#0d5a52]/20 text-[#0d5a52] group-hover:bg-[#0d5a52] group-hover:text-white transition-colors">
+                {link.icon}
+              </span>
+              <span className="text-sm text-[#1a1612] dark:text-[#ede7de] group-hover:text-[#0d5a52] dark:group-hover:text-[#4db8ac] transition-colors">{link.label}</span>
+            </a>
+          ))}
+          {d.note && (
+            <div className="px-5 py-3.5 flex items-start gap-3">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#0d5a52]/10 dark:bg-[#0d5a52]/20 text-[#0d5a52]">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <polyline points="14,2 14,8 20,8" />
+                  <line x1="16" y1="13" x2="8" y2="13" />
+                  <line x1="16" y1="17" x2="8" y2="17" />
+                </svg>
+              </span>
+              <span className="pt-1.5 text-sm text-[#7a6f66] dark:text-[#9a8f87] leading-relaxed whitespace-pre-line">{d.note}</span>
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  })
+
   return (
     <>
       <main className="h-screen flex flex-col bg-[#f2ece4] dark:bg-[#1c1a16]">
@@ -816,7 +941,9 @@ function ClassicDesign(props: DesignProps) {
         </header>
 
         <div className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
-          <div className="mx-auto max-w-[1280px] px-4 pb-6 pt-16 md:px-8 md:pb-10 md:pt-20 lg:h-full lg:flex lg:flex-col">
+          <div className="lg:hidden sticky top-0 z-0 [&>div]:rounded-none [&>div]:shadow-none">{photoBlock}</div>
+
+          <div className="relative z-10 mx-auto max-w-[1280px] bg-[#f2ece4] px-4 pb-6 pt-16 dark:bg-[#1c1a16] md:px-8 md:pb-10 md:pt-20 lg:h-full lg:flex lg:flex-col">
             <div className="mb-6 lg:shrink-0">
               {(pageTitle || workspaceName) && (
                 <h1 className="text-2xl font-extrabold tracking-tight text-[#1a1612] dark:text-[#ede7de] md:text-3xl">{pageTitle || workspaceName}</h1>
@@ -1297,128 +1424,11 @@ function ClassicDesign(props: DesignProps) {
                     )
                   })}
 
-                {!loading &&
-                  contactBlocks
-                    .filter((b) => {
-                      const d = b.data
-                      return d.phone || d.telegram || d.whatsapp || d.email || d.address || d.note
-                    })
-                    .map((block) => {
-                      const d = block.data
-                      const links: { href: string; label: string; icon: React.ReactNode }[] = []
-                      if (d.phone)
-                        links.push({
-                          href: `tel:${d.phone.replace(/\s/g, '')}`,
-                          label: d.phone,
-                          icon: (
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M22 16.92v3a2 2 0 0 1-2.18 2A19.79 19.79 0 0 1 11.39 19a19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" />
-                            </svg>
-                          ),
-                        })
-                      if (d.telegram)
-                        links.push({
-                          href: d.telegram.startsWith('http') ? d.telegram : `https://t.me/${d.telegram.replace(/^@/, '')}`,
-                          label: d.telegram,
-                          icon: (
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
-                              <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.248-1.97 9.286c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.871 4.326-2.962-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.833.935z" />
-                            </svg>
-                          ),
-                        })
-                      if (d.whatsapp)
-                        links.push({
-                          href: `https://wa.me/${d.whatsapp.replace(/\D/g, '')}`,
-                          label: d.whatsapp,
-                          icon: (
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
-                              <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413z" />
-                            </svg>
-                          ),
-                        })
-                      if (d.email)
-                        links.push({
-                          href: `mailto:${d.email}`,
-                          label: d.email,
-                          icon: (
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
-                              <polyline points="22,6 12,13 2,6" />
-                            </svg>
-                          ),
-                        })
-                      if (d.address)
-                        links.push({
-                          href: `https://yandex.ru/maps/?text=${encodeURIComponent(d.address)}`,
-                          label: d.address,
-                          icon: (
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
-                              <circle cx="12" cy="10" r="3" />
-                            </svg>
-                          ),
-                        })
-
-                      return (
-                        <div key={block.id} className="overflow-hidden rounded-2xl border border-[#e0d5c9] dark:border-[#38322a] bg-white dark:bg-[#252119] shadow-card">
-                          <div className="border-b border-[#e0d5c9] dark:border-[#38322a] px-5 py-3.5">
-                            <span className="text-xs font-semibold uppercase tracking-widest text-[#7a6f66] dark:text-[#9a8f87]">{block.title || 'Контакты'}</span>
-                          </div>
-                          <div className="divide-y divide-[#e0d5c9] dark:divide-[#38322a]">
-                            {links.map((link, i) => (
-                              <a
-                                key={i}
-                                href={link.href}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="flex items-center gap-3 px-5 py-3.5 transition-colors hover:bg-[#f8f4f0] dark:hover:bg-[#1f1c16] group"
-                              >
-                                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#0d5a52]/10 dark:bg-[#0d5a52]/20 text-[#0d5a52] group-hover:bg-[#0d5a52] group-hover:text-white transition-colors">
-                                  {link.icon}
-                                </span>
-                                <span className="text-sm text-[#1a1612] dark:text-[#ede7de] group-hover:text-[#0d5a52] dark:group-hover:text-[#4db8ac] transition-colors">{link.label}</span>
-                              </a>
-                            ))}
-                            {d.note && (
-                              <div className="px-5 py-3.5 flex items-start gap-3">
-                                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#0d5a52]/10 dark:bg-[#0d5a52]/20 text-[#0d5a52]">
-                                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                                    <polyline points="14,2 14,8 20,8" />
-                                    <line x1="16" y1="13" x2="8" y2="13" />
-                                    <line x1="16" y1="17" x2="8" y2="17" />
-                                  </svg>
-                                </span>
-                                <span className="pt-1.5 text-sm text-[#7a6f66] dark:text-[#9a8f87] leading-relaxed whitespace-pre-line">{d.note}</span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )
-                    })}
+                {!loading && <div className="hidden lg:contents">{contactsCards}</div>}
               </div>
 
               <aside className="space-y-3 lg:overflow-y-auto lg:pb-6">
-                <div className="relative overflow-hidden rounded-2xl shadow-card">
-                  {previewImageUrl ? (
-                    <>
-                      <div key={previewImageUrl} className="aspect-square w-full transition-opacity duration-500">
-                        <CroppedImage src={previewImageUrl} crop={parseCropSafe(selectedModel?.image_crop)} className="aspect-square w-full object-cover" />
-                      </div>
-                      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/30 to-transparent px-5 pb-5 pt-16">
-                        {workspaceName && <div className="text-[10px] font-semibold uppercase tracking-widest text-white/50">{workspaceName}</div>}
-                        {selectedModel && <div className="mt-0.5 text-lg font-bold leading-tight text-white">{selectedModel.name}</div>}
-                        {selectedLayout && <div className="mt-0.5 text-sm text-white/65">{selectedLayout.name}</div>}
-                      </div>
-                    </>
-                  ) : (
-                    <div className="flex aspect-square flex-col items-center justify-center bg-[#e8ddd3] dark:bg-[#2e2820]">
-                      <div className="text-7xl opacity-15">🛁</div>
-                      <div className="mt-4 text-sm font-semibold text-[#7a6f66] dark:text-[#9a8f87]">{selectedModel?.name || 'Выберите модель'}</div>
-                      <div className="mt-1 text-xs text-[#b0a499] dark:text-[#5a5048]">Добавьте фото модели в админке</div>
-                    </div>
-                  )}
-                </div>
+                <div className="hidden lg:block">{photoBlock}</div>
 
                 <div className="overflow-hidden rounded-2xl border border-[#e0d5c9] dark:border-[#38322a] bg-white dark:bg-[#252119] shadow-card">
                   <div className="border-b border-[#e0d5c9] dark:border-[#38322a] px-5 py-3.5">
@@ -1557,6 +1567,12 @@ function ClassicDesign(props: DesignProps) {
                 <p className="px-1 text-center text-xs text-[#7a6f66] dark:text-[#9a8f87]">{offerNote || 'Предложение фиксируется по ссылке и не меняется'}</p>
               </aside>
             </div>
+
+            {contactsCards.length > 0 && (
+              <div className="lg:hidden sticky bottom-20 z-20 -mx-4 mt-5 space-y-3 bg-[#f2ece4]/95 px-4 pb-1 pt-3 backdrop-blur-sm dark:bg-[#1c1a16]/95 md:-mx-8 md:px-8">
+                {contactsCards}
+              </div>
+            )}
           </div>
           <div className="lg:hidden h-20" />
         </div>

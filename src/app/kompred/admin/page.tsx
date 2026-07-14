@@ -131,9 +131,12 @@ function parseCropSafe(raw: string | null): CropRect | null {
   }
 }
 
+// Image bytes are fetched server-side by /api/img-proxy, which runs on the same box as the
+// PHP backend — so this must stay a loopback address, never the public IP (port 8080 there
+// is firewalled to localhost-only).
 function normalizeImageUrl(url: string): string {
   if (!url) return ''
-  const full = url.startsWith('http') ? url : `http://159.194.225.55:8080${url.startsWith('/') ? '' : '/'}${url}`
+  const full = url.startsWith('http') ? url : `http://127.0.0.1:8080${url.startsWith('/') ? '' : '/'}${url}`
   return full.startsWith('http://') ? `/api/img-proxy?url=${encodeURIComponent(full)}` : full
 }
 

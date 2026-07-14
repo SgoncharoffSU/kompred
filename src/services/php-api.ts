@@ -10,7 +10,7 @@ type PhpBootstrap = { ok: boolean; models: PhpModel[]; options: PhpOption[]; gro
 
 // ── Adapters (PHP → TypeScript domain types) ──────────────────────────────────
 
-const PHP_STATIC_BASE = 'http://159.194.225.55:8080'
+const PHP_STATIC_BASE = 'http://127.0.0.1:8080'
 
 function normalizeImageUrl(url: string): string {
   if (!url) return ''
