@@ -13,6 +13,44 @@ function media_file_path($file_url) {
     return $name !== '' ? media_storage_dir() . DIRECTORY_SEPARATOR . $name : '';
 }
 
+// Strips scripts, event-handler attributes and javascript:/data: URIs from an
+// uploaded SVG before it's saved to /uploads — SVGs are XML and can otherwise
+// carry an XSS payload that executes if the file is opened directly.
+function sanitize_svg($content) {
+    if (stripos($content, '<svg') === false) return false;
+    libxml_use_internal_errors(true);
+    $doc = new DOMDocument();
+    $loaded = $doc->loadXML($content, LIBXML_NONET);
+    libxml_clear_errors();
+    if (!$loaded || !$doc->documentElement || strtolower($doc->documentElement->nodeName) !== 'svg') return false;
+
+    $dangerous_tags = array('script', 'foreignobject', 'iframe', 'object', 'embed', 'link', 'meta', 'style');
+    foreach ($dangerous_tags as $tag) {
+        $nodes = $doc->getElementsByTagName($tag);
+        for ($i = $nodes->length - 1; $i >= 0; $i--) {
+            $node = $nodes->item($i);
+            $node->parentNode->removeChild($node);
+        }
+    }
+
+    $all = $doc->getElementsByTagName('*');
+    foreach ($all as $el) {
+        if (!($el instanceof DOMElement)) continue;
+        $to_remove = array();
+        foreach ($el->attributes as $attr) {
+            $attr_name = strtolower($attr->nodeName);
+            $attr_value = trim($attr->nodeValue);
+            if (strpos($attr_name, 'on') === 0) { $to_remove[] = $attr->nodeName; continue; }
+            if (($attr_name === 'href' || $attr_name === 'xlink:href') && preg_match('/^\s*(javascript|data):/i', $attr_value)) {
+                $to_remove[] = $attr->nodeName;
+            }
+        }
+        foreach ($to_remove as $name) $el->removeAttribute($name);
+    }
+
+    return $doc->saveXML($doc->documentElement);
+}
+
 function media_rows($db) {
     $rows = array();
     $res = $db->query('SELECT id,file_url,file_name,mime_type,file_size,IFNULL(folder_id,0) as folder_id,created_at FROM media_library ORDER BY id DESC LIMIT 500');
@@ -659,8 +697,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'upload_image') {
     $finfo = finfo_open(FILEINFO_MIME_TYPE);
     $mime = finfo_file($finfo, $file['tmp_name']);
     finfo_close($finfo);
+
+    $is_svg = false;
     if (!isset($allowed[$mime])) {
-        json_out(array('ok' => false, 'error' => 'Разрешены только изображения'));
+        // finfo frequently reports SVGs as text/plain or text/xml — sniff the content instead.
+        $head = file_get_contents($file['tmp_name'], false, null, 0, 1024);
+        if (in_array($mime, array('image/svg+xml', 'text/xml', 'text/plain', 'text/html', 'application/xml'), true)
+            && stripos($head, '<svg') !== false) {
+            $is_svg = true;
+        }
+        if (!$is_svg) {
+            json_out(array('ok' => false, 'error' => 'Разрешены только изображения'));
+        }
     }
 
     $uploads_dir = __DIR__ . '/../uploads';
@@ -668,11 +716,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'upload_image') {
         mkdir($uploads_dir, 0755, true);
     }
 
-    $ext = $allowed[$mime];
-    $name = 'img_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
-    $target = $uploads_dir . '/' . $name;
-    if (!move_uploaded_file($file['tmp_name'], $target) || !is_file($target) || filesize($target) <= 0) {
-        json_out(array('ok' => false, 'error' => 'Не удалось сохранить файл'));
+    if ($is_svg) {
+        $clean = sanitize_svg(file_get_contents($file['tmp_name']));
+        if ($clean === false) {
+            json_out(array('ok' => false, 'error' => 'Некорректный SVG-файл'));
+        }
+        $mime = 'image/svg+xml';
+        $name = 'img_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.svg';
+        $target = $uploads_dir . '/' . $name;
+        if (file_put_contents($target, $clean) === false || !is_file($target) || filesize($target) <= 0) {
+            json_out(array('ok' => false, 'error' => 'Не удалось сохранить файл'));
+        }
+    } else {
+        $ext = $allowed[$mime];
+        $name = 'img_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+        $target = $uploads_dir . '/' . $name;
+        if (!move_uploaded_file($file['tmp_name'], $target) || !is_file($target) || filesize($target) <= 0) {
+            json_out(array('ok' => false, 'error' => 'Не удалось сохранить файл'));
+        }
     }
 
     $file_url = '/uploads/' . $name;
