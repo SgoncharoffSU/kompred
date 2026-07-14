@@ -75,6 +75,7 @@ interface ClientOption {
   max_quantity: number
   max_length: number
   max_width: number
+  unit: string
   created_at: string
   updated_at: string
 }
@@ -199,6 +200,7 @@ function adaptOption(raw: any, modelId?: string): ClientOption {
     max_quantity: Number(raw.max_quantity || 1),
     max_length: Number(raw.max_length || 0),
     max_width: Number(raw.max_width || 0),
+    unit: raw.unit || 'шт',
     created_at: '',
     updated_at: '',
   }
@@ -805,12 +807,15 @@ function ClassicDesign(props: DesignProps) {
   const offerRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const [contactsNearBottom, setContactsNearBottom] = useState(false)
+  const [contactsExpanded, setContactsExpanded] = useState(false)
   useEffect(() => {
     const el = scrollContainerRef.current
     if (!el) return
     const onScroll = () => {
       const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
-      setContactsNearBottom(distanceFromBottom < 160)
+      const near = distanceFromBottom < 160
+      setContactsNearBottom(near)
+      if (!near) setContactsExpanded(false)
     }
     onScroll()
     el.addEventListener('scroll', onScroll, { passive: true })
@@ -954,7 +959,7 @@ function ClassicDesign(props: DesignProps) {
           <div className="absolute left-4 top-full z-50 flex -translate-y-1/2 items-center gap-3 md:left-8">
             <WorkspaceLogo logoLightUrl={logoLightUrl} logoDarkUrl={logoDarkUrl} workspaceName={workspaceName} size="lg" />
             <span
-              className={`${brandFont.className} text-2xl leading-none tracking-wide text-[#0d5a52] drop-shadow-[0_1px_2px_rgba(255,255,255,0.6)] dark:text-[#5fcabf] dark:drop-shadow-[0_1px_3px_rgba(0,0,0,0.5)] md:text-3xl`}
+              className={`${brandFont.className} text-4xl leading-none tracking-wide text-[#0d5a52] drop-shadow-[0_1px_2px_rgba(255,255,255,0.6)] dark:text-[#5fcabf] dark:drop-shadow-[0_1px_3px_rgba(0,0,0,0.5)] md:text-5xl`}
             >
               СК Сибирия
             </span>
@@ -962,9 +967,10 @@ function ClassicDesign(props: DesignProps) {
         </header>
 
         <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
-          <div className="lg:hidden sticky top-0 z-0 [&>div]:rounded-none [&>div]:shadow-none">{photoBlock}</div>
+          <div className="lg:hidden sticky top-0 z-0 [&>div]:rounded-none [&>div]:shadow-none [&_.aspect-square]:!aspect-auto [&_.aspect-square]:!h-[85vh]">{photoBlock}</div>
 
-          <div className="relative z-10 mx-auto max-w-[1280px] bg-[#f2ece4] px-4 pb-6 pt-16 dark:bg-[#1c1a16] md:px-8 md:pb-10 md:pt-20 lg:h-full lg:flex lg:flex-col">
+          <div className="relative z-10 mx-auto max-w-[1280px] px-4 pb-6 pt-16 md:px-8 md:pb-10 md:pt-20 lg:h-full lg:flex lg:flex-col lg:pt-10">
+            <div className="bg-[#f2ece4] dark:bg-[#1c1a16] lg:flex lg:flex-1 lg:flex-col lg:min-h-0">
             <div className="mb-6 lg:shrink-0">
               {(pageTitle || workspaceName) && (
                 <h1 className="text-2xl font-extrabold tracking-tight text-[#1a1612] dark:text-[#ede7de] md:text-3xl">{pageTitle || workspaceName}</h1>
@@ -1306,6 +1312,7 @@ function ClassicDesign(props: DesignProps) {
                                           >
                                             +
                                           </button>
+                                          {option.unit && option.unit !== 'шт' && <span className="text-[10px] text-[#7a6f66] dark:text-[#9a8f87]">{option.unit}</span>}
                                         </div>
                                       )
 
@@ -1336,7 +1343,7 @@ function ClassicDesign(props: DesignProps) {
                                                 className="h-full w-full object-cover transition-transform duration-300 hover:scale-105"
                                               />
                                             </div>
-                                            {isActive && !hasStepper && (
+                                            {isActive && (
                                               <span className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-[#0d5a52] text-white shadow-sm">
                                                 <CheckIcon />
                                               </span>
@@ -1395,7 +1402,7 @@ function ClassicDesign(props: DesignProps) {
                                             isActive ? 'border-[#0d5a52] bg-[#f0f7f5] dark:bg-[#0d5a52]/15' : 'border-[#e0d5c9] dark:border-[#38322a] hover:border-[#0d5a52]/40 hover:bg-[#f8f4f0] dark:hover:bg-[#2e2820]'
                                           } ${isDisabled ? 'opacity-40 grayscale' : ''}`}
                                         >
-                                          {!hasStepper && !hasDimensions && (
+                                          {!hasDimensions && (
                                             <span
                                               className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border transition-colors ${
                                                 isActive ? 'border-[#0d5a52] bg-[#0d5a52] text-white' : 'border-[#c4b8a8] dark:border-[#5a5048]'
@@ -1507,7 +1514,17 @@ function ClassicDesign(props: DesignProps) {
                                         <div key={o.id} className="flex items-baseline justify-between gap-2">
                                           <span className="text-xs text-[#1a1612] dark:text-[#ede7de]">
                                             {o.name}
-                                            {isDimension && dim ? ` (${dim.length}×${dim.width} м)` : qty > 1 ? ` × ${qty}` : ''}
+                                            {isDimension && dim
+                                              ? dim.length > 0 && dim.width > 0
+                                                ? ` (${dim.length}×${dim.width} м)`
+                                                : dim.length > 0
+                                                  ? ` (${dim.length} м)`
+                                                  : dim.width > 0
+                                                    ? ` (${dim.width} м)`
+                                                    : ''
+                                              : qty > 1
+                                                ? ` × ${qty} ${o.unit || 'шт'}`
+                                                : ''}
                                             {choiceName && <span className="block text-[10px] text-[#7a6f66] dark:text-[#9a8f87]">{choiceName}</span>}
                                           </span>
                                           <span className="shrink-0 text-xs font-semibold text-[#b87524]">
@@ -1588,17 +1605,36 @@ function ClassicDesign(props: DesignProps) {
                 <p className="px-1 text-center text-xs text-[#7a6f66] dark:text-[#9a8f87]">{offerNote || 'Предложение фиксируется по ссылке и не меняется'}</p>
               </aside>
             </div>
+            </div>
+
+            {/* Transparent gap so the sticky photo shows through once everything above has
+                scrolled past — the final screen assembles from photo (behind) + contacts +
+                price bar (both fixed, overlaid on top). */}
+            <div className="lg:hidden h-[45vh]" />
           </div>
           <div className="lg:hidden h-20" />
         </div>
 
         {contactsCards.length > 0 && (
           <div
-            className={`lg:hidden fixed bottom-20 inset-x-0 z-20 space-y-2 border-t border-[#e0d5c9] dark:border-[#38322a] bg-[#f2ece4]/95 px-4 pb-2 pt-2 backdrop-blur-sm transition-all duration-200 dark:bg-[#1c1a16]/95 ${
+            className={`lg:hidden fixed bottom-20 inset-x-0 z-20 border-t border-[#e0d5c9] dark:border-[#38322a] bg-[#f2ece4]/95 backdrop-blur-sm transition-all duration-200 dark:bg-[#1c1a16]/95 ${
               contactsNearBottom ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-3 opacity-0'
             }`}
           >
-            {contactsCards}
+            {contactsExpanded ? (
+              <div className="space-y-2 px-4 pb-2 pt-2">{contactsCards}</div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setContactsExpanded(true)}
+                className="flex w-full items-center justify-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-[#0d5a52] dark:text-[#4db8ae]"
+              >
+                📞 Связаться с нами
+                <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 16 16">
+                  <path d="M4 6l4 4 4-4" />
+                </svg>
+              </button>
+            )}
           </div>
         )}
 

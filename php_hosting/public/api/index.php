@@ -20,6 +20,18 @@ function media_storage_dir() {
     return realpath(__DIR__ . '/../uploads') ?: (__DIR__ . '/../uploads');
 }
 
+// mysqlnd returns native int/float types for prepared-statement results (get_result()) but
+// strings for plain query() — the whole frontend was built against the old query()-everywhere
+// behavior (ids compared with ===), so every prepared-statement row handed back to the client
+// needs its scalar columns restored to strings before any computed array/object fields are
+// layered on top.
+function stringify_row($row) {
+    foreach ($row as $k => $v) {
+        if ($v !== null && !is_array($v)) $row[$k] = strval($v);
+    }
+    return $row;
+}
+
 function media_file_path($file_url) {
     $name = basename(parse_url($file_url, PHP_URL_PATH));
     return $name !== '' ? media_storage_dir() . DIRECTORY_SEPARATOR . $name : '';
@@ -73,7 +85,7 @@ function media_rows($db, $workspace_id) {
         $path = media_file_path($row['file_url']);
         if ($path === '' || !is_file($path)) continue;
         $row['file_url'] = '/uploads/' . basename($path);
-        $rows[] = $row;
+        $rows[] = stringify_row($row);
     }
     return $rows;
 }
@@ -245,6 +257,10 @@ $col_check = $db->query("SHOW COLUMNS FROM options_catalog LIKE 'max_width'");
 if ($col_check && $col_check->num_rows === 0) {
     $db->query("ALTER TABLE options_catalog ADD COLUMN max_width INT NOT NULL DEFAULT 0");
 }
+$col_check = $db->query("SHOW COLUMNS FROM options_catalog LIKE 'unit'");
+if ($col_check && $col_check->num_rows === 0) {
+    $db->query("ALTER TABLE options_catalog ADD COLUMN unit VARCHAR(20) NOT NULL DEFAULT 'шт'");
+}
 // Tenant scoping: models/option_groups/options_catalog/calculations/media_library already
 // had a workspace_id column that the API never actually filtered by. exclusion_rules,
 // layouts and media_folders never had one at all. Add it here and backfill every existing
@@ -287,7 +303,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'bootstrap') {
     $stmt->bind_param('i', $WORKSPACE_ID);
     $stmt->execute();
     $res = $stmt->get_result();
-    while ($row = $res->fetch_assoc()) $models[] = $row;
+    while ($row = $res->fetch_assoc()) $models[] = stringify_row($row);
 
     $availability = array();
     $active_avail = array();
@@ -312,11 +328,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'bootstrap') {
             }
         }
     }
-    $stmt2 = $db->prepare('SELECT o.id,o.group_id,o.sort_order,IFNULL(g.name,\'??? ??????\') as group_name,o.name,o.image_url,o.image_crop,o.price,o.base_price,o.is_default,o.description,o.popup_options,o.features_json,o.max_quantity,o.max_length,o.max_width,o.created_at FROM options_catalog o LEFT JOIN option_groups g ON g.id=o.group_id WHERE o.workspace_id=? ORDER BY COALESCE(g.sort_order,9999), o.sort_order ASC, o.id ASC');
+    $stmt2 = $db->prepare('SELECT o.id,o.group_id,o.sort_order,IFNULL(g.name,\'??? ??????\') as group_name,o.name,o.image_url,o.image_crop,o.price,o.base_price,o.is_default,o.description,o.popup_options,o.features_json,o.max_quantity,o.max_length,o.max_width,o.unit,o.created_at FROM options_catalog o LEFT JOIN option_groups g ON g.id=o.group_id WHERE o.workspace_id=? ORDER BY COALESCE(g.sort_order,9999), o.sort_order ASC, o.id ASC');
     $stmt2->bind_param('i', $WORKSPACE_ID);
     $stmt2->execute();
     $res2 = $stmt2->get_result();
     while ($row = $res2->fetch_assoc()) {
+        $row = stringify_row($row);
         $row['features'] = $row['features_json'] ? json_decode($row['features_json'], true) : array();
         unset($row['features_json']);
         $row['popup_options'] = $row['popup_options'] ? json_decode($row['popup_options'], true) : array();
@@ -332,6 +349,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'bootstrap') {
     $stmt3->execute();
     $res3 = $stmt3->get_result();
     while ($row = $res3->fetch_assoc()) {
+        $row = stringify_row($row);
         $row['model_ids'] = $row['model_ids'] ? json_decode($row['model_ids'], true) : null;
         $groups[] = $row;
     }
@@ -341,14 +359,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'bootstrap') {
     $stmt5->bind_param('i', $WORKSPACE_ID);
     $stmt5->execute();
     $res5 = $stmt5->get_result();
-    while ($row = $res5->fetch_assoc()) $exclusions[] = $row;
+    while ($row = $res5->fetch_assoc()) $exclusions[] = stringify_row($row);
 
     $media = media_rows($db, $WORKSPACE_ID);
     $stmt4 = $db->prepare('SELECT id,name,created_at FROM media_folders WHERE workspace_id=? ORDER BY id ASC');
     $stmt4->bind_param('i', $WORKSPACE_ID);
     $stmt4->execute();
     $res4 = $stmt4->get_result();
-    while ($row = $res4->fetch_assoc()) $folders[] = $row;
+    while ($row = $res4->fetch_assoc()) $folders[] = stringify_row($row);
 
     json_out(array('ok' => true, 'models' => $models, 'options' => $options, 'groups' => $groups, 'exclusions' => $exclusions, 'media' => $media, 'folders' => $folders));
 }
@@ -360,7 +378,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'media_list') {
     $stmt2->bind_param('i', $WORKSPACE_ID);
     $stmt2->execute();
     $res2 = $stmt2->get_result();
-    while ($row = $res2->fetch_assoc()) $folders[] = $row;
+    while ($row = $res2->fetch_assoc()) $folders[] = stringify_row($row);
     json_out(array('ok' => true, 'media' => $media, 'folders' => $folders));
 }
 
@@ -885,7 +903,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'get_layouts') {
     $stmt->execute();
     $result = $stmt->get_result();
     $rows = array();
-    while ($row = $result->fetch_assoc()) $rows[] = $row;
+    while ($row = $result->fetch_assoc()) $rows[] = stringify_row($row);
     json_out(array('ok' => true, 'layouts' => $rows));
 }
 
@@ -1034,13 +1052,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'duplicate_group') {
 
         $or = $db->query("SELECT * FROM options_catalog WHERE group_id=$src_id AND workspace_id=$WORKSPACE_ID ORDER BY sort_order ASC");
         if ($or) {
-            $os = $db->prepare('INSERT INTO options_catalog (group_id,name,image_url,image_crop,price,base_price,description,features_json,popup_options,is_default,sort_order,max_quantity,max_length,max_width,workspace_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+            $os = $db->prepare('INSERT INTO options_catalog (group_id,name,image_url,image_crop,price,base_price,description,features_json,popup_options,is_default,sort_order,max_quantity,max_length,max_width,unit,workspace_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
             while ($opt = $or->fetch_assoc()) {
                 $os->bind_param(
-                    'isssddsssiiiiii',
+                    'isssddsssiiiiisi',
                     $new_group_id, $opt['name'], $opt['image_url'], $opt['image_crop'], $opt['price'], $opt['base_price'],
                     $opt['description'], $opt['features_json'], $opt['popup_options'], $opt['is_default'], $opt['sort_order'],
-                    $opt['max_quantity'], $opt['max_length'], $opt['max_width'], $WORKSPACE_ID
+                    $opt['max_quantity'], $opt['max_length'], $opt['max_width'], $opt['unit'], $WORKSPACE_ID
                 );
                 $os->execute();
                 $new_option_id = $db->insert_id;
@@ -1235,9 +1253,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'create_option_json') {
     $max_width = isset($data['max_width']) ? max(0, intval($data['max_width'])) : 0;
     $base_price = isset($data['base_price']) ? floatval($data['base_price']) : 0;
     $is_default = (!empty($data['is_default'])) ? 1 : 0;
-    $stmt = $db->prepare('INSERT INTO options_catalog (group_id,name,image_url,price,description,features_json,max_quantity,max_length,max_width,base_price,is_default,workspace_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)');
+    $unit = isset($data['unit']) ? trim($data['unit']) : 'шт';
+    if ($unit === '') $unit = 'шт';
+    $stmt = $db->prepare('INSERT INTO options_catalog (group_id,name,image_url,price,description,features_json,max_quantity,max_length,max_width,base_price,is_default,unit,workspace_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)');
     $empty = ''; $features = '[]';
-    $stmt->bind_param('issdssiiidii', $group_id, $name, $image_url, $price, $empty, $features, $max_quantity, $max_length, $max_width, $base_price, $is_default, $WORKSPACE_ID);
+    $stmt->bind_param('issdssiiidisi', $group_id, $name, $image_url, $price, $empty, $features, $max_quantity, $max_length, $max_width, $base_price, $is_default, $unit, $WORKSPACE_ID);
     $stmt->execute();
     $new_id = $db->insert_id;
     if ($model_id > 0 && model_owned_by_workspace($db, $model_id, $WORKSPACE_ID)) {
@@ -1282,6 +1302,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'update_option_json') {
         $set[] = 'is_default=?';
         $types .= 'i';
         $values[] = $data['is_default'] ? 1 : 0;
+    }
+    if (isset($data['unit'])) {
+        $set[] = 'unit=?';
+        $types .= 's';
+        $u = trim($data['unit']);
+        $values[] = $u === '' ? 'шт' : $u;
     }
     if (array_key_exists('description', $data)) {
         $set[] = 'description=?';
@@ -1443,7 +1469,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'get_calculation') {
         $types = str_repeat('i', count($option_ids));
         // COALESCE onto the per-model photo override (if the seller set one for this model)
         // so the saved offer shows exactly the picture the buyer saw while configuring.
-        $stmt4 = $db->prepare("SELECT o.id, o.group_id, o.sort_order, o.name, o.price, o.base_price, o.max_length, o.max_width, COALESCE(oma.image_url, o.image_url) as image_url, IFNULL(g.name,'Опция') as group_name
+        $stmt4 = $db->prepare("SELECT o.id, o.group_id, o.sort_order, o.name, o.price, o.base_price, o.max_length, o.max_width, o.unit, COALESCE(oma.image_url, o.image_url) as image_url, IFNULL(g.name,'Опция') as group_name
             FROM options_catalog o
             LEFT JOIN option_groups g ON g.id=o.group_id
             LEFT JOIN option_model_availability oma ON oma.option_id=o.id AND oma.model_id=$model_id
@@ -1526,6 +1552,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'get_calculation') {
         'fixed_at' => $calc['fixed_at'],
         'model_name' => $model ? $model['name'] : 'Модель',
         'model_image_url' => $model_image,
+        'model_id' => $model_id,
         'layout_name' => $layout ? $layout['name'] : 'Планировка',
         'selected_options' => $selected_options,
         'account' => isset($snapshot['account']) ? $snapshot['account'] : null,

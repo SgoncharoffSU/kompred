@@ -17,6 +17,7 @@ type SelectedOption = {
   qty: number
   length: number | null
   width: number | null
+  unit: string
   image_url: string
 }
 
@@ -27,8 +28,16 @@ type OfferData = {
   fixed_at: string
   model_name: string
   model_image_url: string
+  model_id: string
   layout_name: string
   selected_options: SelectedOption[]
+  account: string | null
+}
+
+type ContactBlock = {
+  id: string
+  title?: string
+  data: { phone?: string; telegram?: string; whatsapp?: string; email?: string; address?: string; note?: string }
 }
 
 async function getCalculation(slug: string): Promise<OfferData | null> {
@@ -45,22 +54,37 @@ async function getCalculation(slug: string): Promise<OfferData | null> {
       fixed_at: data.fixed_at,
       model_name: data.model_name || 'Модель',
       model_image_url: normalizeUrl(data.model_image_url || ''),
+      model_id: String(data.model_id ?? ''),
       layout_name: data.layout_name || '',
       selected_options: (data.selected_options || []).map(
-        (o: { id: number; name: string; group_name: string; image_url?: string; line_total?: number; qty?: number; length?: number; width?: number }) => ({
+        (o: { id: number; name: string; group_name: string; image_url?: string; line_total?: number; qty?: number; length?: number; width?: number; unit?: string }) => ({
           id: String(o.id),
           name: o.name,
           line_total: Number(o.line_total ?? 0),
           qty: Number(o.qty ?? 1),
           length: o.length ? Number(o.length) : null,
           width: o.width ? Number(o.width) : null,
+          unit: o.unit || 'шт',
           group_name: o.group_name,
           image_url: normalizeUrl(o.image_url || ''),
         })
       ),
+      account: data.account ? String(data.account) : null,
     }
   } catch {
     return null
+  }
+}
+
+async function getContactBlocks(account: string): Promise<ContactBlock[]> {
+  const siteUrl = process.env.SITE_URL || 'http://127.0.0.1:8016'
+  try {
+    const res = await fetch(`${siteUrl}/api/workspace-lookup?account=${encodeURIComponent(account)}`, { cache: 'no-store' })
+    if (!res.ok) return []
+    const data = await res.json()
+    return Array.isArray(data.contact_blocks) ? data.contact_blocks : []
+  } catch {
+    return []
   }
 }
 
@@ -82,6 +106,8 @@ function formatDate(dateStr: string) {
 
 export default async function OfferPage({ params }: { params: { slug: string } }) {
   const offer = await getCalculation(params.slug)
+  const contactBlocks = offer?.account ? await getContactBlocks(offer.account) : []
+  const editUrl = offer?.account ? `/cli${offer.account}${offer.model_id ? `?model=${offer.model_id}` : ''}` : null
 
   if (!offer) {
     return (
@@ -177,7 +203,15 @@ export default async function OfferPage({ params }: { params: { slug: string } }
                   <div className="min-w-0 flex-1">
                     <div className="text-sm font-medium text-[#1a1612]">
                       {item.name}
-                      {item.length && item.width ? ` (${item.length}×${item.width} м)` : item.qty > 1 ? ` × ${item.qty}` : ''}
+                      {item.length && item.width
+                        ? ` (${item.length}×${item.width} м)`
+                        : item.length
+                          ? ` (${item.length} м)`
+                          : item.width
+                            ? ` (${item.width} м)`
+                            : item.qty > 1
+                              ? ` × ${item.qty} ${item.unit}`
+                              : ''}
                     </div>
                     <div className="text-xs text-[#7a6f66]">{item.group_name}</div>
                   </div>
@@ -202,10 +236,47 @@ export default async function OfferPage({ params }: { params: { slug: string } }
           {offer.selected_options.length === 0 && (
             <p className="mt-2 text-xs opacity-40">Базовая комплектация, без дополнительных опций</p>
           )}
-          <div className="mt-5">
+          <div className="mt-5 flex flex-wrap gap-2">
             <PrintButton />
+            {editUrl && (
+              <a
+                href={editUrl}
+                className="inline-flex items-center gap-2 rounded-xl border border-white/25 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white backdrop-blur-sm transition-all duration-200 hover:bg-white/20 active:scale-[0.98]"
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.5-9.5a2.121 2.121 0 013 3L12 16l-4 1 1-4 9.5-9.5z" />
+                </svg>
+                Изменить конфигурацию
+              </a>
+            )}
           </div>
         </div>
+
+        {/* Contacts */}
+        {contactBlocks.map((block) => {
+          const d = block.data
+          const links: { href: string; label: string }[] = []
+          if (d.phone) links.push({ href: `tel:${d.phone.replace(/\s/g, '')}`, label: d.phone })
+          if (d.telegram) links.push({ href: d.telegram.startsWith('http') ? d.telegram : `https://t.me/${d.telegram.replace(/^@/, '')}`, label: d.telegram })
+          if (d.whatsapp) links.push({ href: `https://wa.me/${d.whatsapp.replace(/\D/g, '')}`, label: d.whatsapp })
+          if (d.email) links.push({ href: `mailto:${d.email}`, label: d.email })
+          if (d.address) links.push({ href: `https://yandex.ru/maps/?text=${encodeURIComponent(d.address)}`, label: d.address })
+          if (links.length === 0) return null
+          return (
+            <div key={block.id} className="overflow-hidden rounded-2xl border border-[#e0d5c9] bg-white shadow-card">
+              <div className="border-b border-[#e0d5c9] px-6 py-3.5">
+                <span className="text-xs font-semibold uppercase tracking-widest text-[#7a6f66]">{block.title || 'Контакты'}</span>
+              </div>
+              <div className="divide-y divide-[#e0d5c9]">
+                {links.map((link, i) => (
+                  <a key={i} href={link.href} className="block px-6 py-3.5 text-sm font-medium text-[#0d5a52] hover:bg-[#f8f4f0]">
+                    {link.label}
+                  </a>
+                ))}
+              </div>
+            </div>
+          )
+        })}
 
       </div>
     </main>

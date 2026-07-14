@@ -62,6 +62,7 @@ interface AdminOption {
   max_quantity: number
   max_length: number
   max_width: number
+  unit: string
   model_photos: Record<string, { image_url: string; image_crop: string | null }>
 }
 
@@ -1245,6 +1246,7 @@ export default function AdminPage() {
   const [editOptionPopupChoices, setEditOptionPopupChoices] = useState<PopupChoice[]>([])
   const [editOptionMaxLength, setEditOptionMaxLength] = useState(0)
   const [editOptionMaxWidth, setEditOptionMaxWidth] = useState(0)
+  const [editOptionUnit, setEditOptionUnit] = useState('шт')
   const [savingOption, setSavingOption] = useState(false)
 
   const [deleteOptionConfirm, setDeleteOptionConfirm] = useState<{ optionId: string; name: string } | null>(null)
@@ -1739,6 +1741,7 @@ export default function AdminPage() {
           max_quantity: 1,
           max_length: 0,
           max_width: 0,
+          unit: 'шт',
           model_photos: {},
         },
       ])
@@ -1759,6 +1762,7 @@ export default function AdminPage() {
     setEditOptionPopupChoices((option.popup_options || []).map((c) => ({ ...c, price: String(c.price) })))
     setEditOptionMaxLength(option.max_length || 0)
     setEditOptionMaxWidth(option.max_width || 0)
+    setEditOptionUnit(option.unit || 'шт')
   }
 
   const saveEditOption = async () => {
@@ -1778,6 +1782,7 @@ export default function AdminPage() {
       popup_options: choicesForApi,
       max_length: maxLength,
       max_width: maxWidth,
+      unit: editOptionUnit.trim() || 'шт',
     })
     setOptions((prev) =>
       prev.map((o) =>
@@ -1792,6 +1797,7 @@ export default function AdminPage() {
               popup_options: choicesForState,
               max_length: maxLength,
               max_width: maxWidth,
+              unit: editOptionUnit.trim() || 'шт',
             }
           : o
       )
@@ -3011,6 +3017,31 @@ export default function AdminPage() {
                           Клиент будет выбирать {editOptionMaxLength > 0 && editOptionMaxWidth > 0 ? 'длину и ширину' : editOptionMaxLength > 0 ? 'длину' : 'ширину'} бегунком, и итоговая цена опции рассчитается как «Цена за м²» × длина × ширина.
                         </p>
                       )}
+                      <div>
+                        <label className="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-[#9a8f87]">Единица измерения</label>
+                        <select
+                          value={['шт', 'м', 'м²', 'м³', 'компл.', 'кг', 'л'].includes(editOptionUnit) ? editOptionUnit : '__custom'}
+                          onChange={(e) => e.target.value !== '__custom' && setEditOptionUnit(e.target.value)}
+                          className="w-full rounded-lg border border-slate-200 dark:border-[#3a312a] bg-white dark:bg-[#1a1612] px-3 py-2 text-sm text-slate-800 dark:text-[#e8e2d9] focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        >
+                          <option value="шт">шт</option>
+                          <option value="м">м</option>
+                          <option value="м²">м²</option>
+                          <option value="м³">м³</option>
+                          <option value="компл.">компл.</option>
+                          <option value="кг">кг</option>
+                          <option value="л">л</option>
+                          <option value="__custom">Другое…</option>
+                        </select>
+                        {!['шт', 'м', 'м²', 'м³', 'компл.', 'кг', 'л'].includes(editOptionUnit) && (
+                          <input
+                            value={editOptionUnit}
+                            onChange={(e) => setEditOptionUnit(e.target.value)}
+                            placeholder="Своя единица"
+                            className="mt-1.5 w-full rounded-lg border border-slate-200 dark:border-[#3a312a] bg-white dark:bg-[#1a1612] px-3 py-2 text-sm text-slate-800 dark:text-[#e8e2d9] focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          />
+                        )}
+                      </div>
                       <label className="flex cursor-pointer items-center gap-2.5 select-none">
                         <input type="checkbox" checked={editOptionIsDefault} onChange={(e) => setEditOptionIsDefault(e.target.checked)} className="h-4 w-4 rounded accent-emerald-600" />
                         <span className="text-sm text-slate-600 dark:text-[#b5afa7]">По умолчанию выбрана</span>
