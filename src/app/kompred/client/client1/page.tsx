@@ -801,7 +801,7 @@ function ClassicDesign(props: DesignProps) {
         </header>
 
         <div className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
-          <div className="mx-auto max-w-[1280px] px-4 py-6 md:px-8 md:py-10 lg:h-full lg:flex lg:flex-col">
+          <div className="mx-auto max-w-[1280px] px-4 pb-6 pt-16 md:px-8 md:pb-10 md:pt-20 lg:h-full lg:flex lg:flex-col">
             <div className="mb-6 lg:shrink-0">
               {(pageTitle || workspaceName) && (
                 <h1 className="text-2xl font-extrabold tracking-tight text-[#1a1612] dark:text-[#ede7de] md:text-3xl">{pageTitle || workspaceName}</h1>
