@@ -806,8 +806,10 @@ function ClassicDesign(props: DesignProps) {
   let optionsHeaderShown = 0
   const offerRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const optionsAnchorRef = useRef<HTMLDivElement>(null)
   const [contactsNearBottom, setContactsNearBottom] = useState(false)
   const [contactsExpanded, setContactsExpanded] = useState(false)
+  const [ctaBarVisible, setCtaBarVisible] = useState(false)
   useEffect(() => {
     const el = scrollContainerRef.current
     if (!el) return
@@ -816,6 +818,11 @@ function ClassicDesign(props: DesignProps) {
       const near = distanceFromBottom < 160
       setContactsNearBottom(near)
       if (!near) setContactsExpanded(false)
+      // The CTA/price bar only makes sense once the visitor has scrolled past the free
+      // model/layout pickers and into the priced option blocks — showing "Сформировать" at
+      // the very top, before there's anything to price, is confusing.
+      const anchor = optionsAnchorRef.current
+      setCtaBarVisible(anchor ? anchor.getBoundingClientRect().top < el.getBoundingClientRect().bottom : true)
     }
     onScroll()
     el.addEventListener('scroll', onScroll, { passive: true })
@@ -978,6 +985,7 @@ function ClassicDesign(props: DesignProps) {
               {(pageSubtitle || !pageTitle) && (
                 <p className="mt-1 text-sm text-[#7a6f66] dark:text-[#9a8f87]">
                   {pageSubtitle || 'Выберите модель, планировку и опции — получите ссылку с персональным расчётом'}
+                  <span className="lg:hidden"> 👇</span>
                 </p>
               )}
             </div>
@@ -1074,6 +1082,8 @@ function ClassicDesign(props: DesignProps) {
                     </div>
                   </div>
                 )}
+
+                <div ref={optionsAnchorRef} />
 
                 {loading && (
                   <div className="overflow-hidden rounded-2xl border border-[#e0d5c9] dark:border-[#38322a] bg-white dark:bg-[#252119] shadow-card">
@@ -1638,7 +1648,11 @@ function ClassicDesign(props: DesignProps) {
           </div>
         )}
 
-        <div className="lg:hidden fixed bottom-0 inset-x-0 z-30 border-t border-[#e0d5c9] dark:border-[#38322a] bg-white/95 dark:bg-[#252119]/95 backdrop-blur-sm px-4 py-3 flex items-center gap-3">
+        <div
+          className={`lg:hidden fixed bottom-0 inset-x-0 z-30 border-t border-[#e0d5c9] dark:border-[#38322a] bg-white/95 dark:bg-[#252119]/95 backdrop-blur-sm px-4 py-3 flex items-center gap-3 transition-all duration-200 ${
+            ctaBarVisible ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-full opacity-0'
+          }`}
+        >
           <div className="flex-1 min-w-0">
             <div className="text-[10px] font-semibold uppercase tracking-widest text-[#7a6f66] dark:text-[#9a8f87]">Итого</div>
             <div className="text-lg font-extrabold tracking-tight text-[#1a1612] dark:text-[#ede7de] leading-none">{fmt(totalPrice)}</div>
