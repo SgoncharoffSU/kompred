@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from 'next/server'
+import { getSessionUser } from '@/lib/auth'
 
 const PHP_BASE_URL = process.env.PHP_BASE_URL || 'http://127.0.0.1:8080'
 const PHP_API_URL = `${PHP_BASE_URL}/api/index.php`
@@ -27,10 +28,15 @@ async function getPhpSessionId(): Promise<string | null> {
 }
 
 export async function POST(request: NextRequest) {
+  const token = request.cookies.get('bh_session')?.value
+  const user = token ? getSessionUser(token) : null
+  if (!user || !user.workspace.use_php) {
+    return NextResponse.json({ ok: false, error: 'No workspace data' })
+  }
   try {
     const phpsessid = await getPhpSessionId()
     const formData = await request.formData()
-    const headers: Record<string, string> = {}
+    const headers: Record<string, string> = { 'X-Workspace-ID': String(user.workspace.php_workspace_id) }
     if (phpsessid) headers.Cookie = `PHPSESSID=${phpsessid}`
     const res = await fetch(`${PHP_API_URL}?action=upload_image`, {
       method: 'POST',

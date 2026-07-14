@@ -657,10 +657,10 @@ function MediaLibraryModal({
                   <button
                     onClick={(e) => handleDelete(e, m.id)}
                     disabled={deletingId === m.id}
-                    className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-[10px] text-white opacity-0 transition-opacity hover:bg-red-600 group-hover:opacity-100 disabled:opacity-50"
+                    className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/70 text-[10px] text-white transition-colors hover:bg-red-600 disabled:opacity-50"
                     title="Удалить"
                   >
-                    ✕
+                    {deletingId === m.id ? '…' : '✕'}
                   </button>
                 </div>
               ))}
