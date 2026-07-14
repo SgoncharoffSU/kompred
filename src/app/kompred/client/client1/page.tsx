@@ -800,6 +800,19 @@ function ClassicDesign(props: DesignProps) {
 
   let optionsHeaderShown = 0
   const offerRef = useRef<HTMLDivElement>(null)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const [contactsNearBottom, setContactsNearBottom] = useState(false)
+  useEffect(() => {
+    const el = scrollContainerRef.current
+    if (!el) return
+    const onScroll = () => {
+      const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+      setContactsNearBottom(distanceFromBottom < 160)
+    }
+    onScroll()
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [])
   useEffect(() => {
     if (offerLink && offerRef.current) offerRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   }, [offerLink])
@@ -940,7 +953,7 @@ function ClassicDesign(props: DesignProps) {
           </div>
         </header>
 
-        <div className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
+        <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
           <div className="lg:hidden sticky top-0 z-0 [&>div]:rounded-none [&>div]:shadow-none">{photoBlock}</div>
 
           <div className="relative z-10 mx-auto max-w-[1280px] bg-[#f2ece4] px-4 pb-6 pt-16 dark:bg-[#1c1a16] md:px-8 md:pb-10 md:pt-20 lg:h-full lg:flex lg:flex-col">
@@ -1567,15 +1580,19 @@ function ClassicDesign(props: DesignProps) {
                 <p className="px-1 text-center text-xs text-[#7a6f66] dark:text-[#9a8f87]">{offerNote || 'Предложение фиксируется по ссылке и не меняется'}</p>
               </aside>
             </div>
-
-            {contactsCards.length > 0 && (
-              <div className="lg:hidden sticky bottom-20 z-20 -mx-4 mt-5 space-y-3 bg-[#f2ece4]/95 px-4 pb-1 pt-3 backdrop-blur-sm dark:bg-[#1c1a16]/95 md:-mx-8 md:px-8">
-                {contactsCards}
-              </div>
-            )}
           </div>
           <div className="lg:hidden h-20" />
         </div>
+
+        {contactsCards.length > 0 && (
+          <div
+            className={`lg:hidden fixed bottom-20 inset-x-0 z-20 space-y-2 border-t border-[#e0d5c9] dark:border-[#38322a] bg-[#f2ece4]/95 px-4 pb-2 pt-2 backdrop-blur-sm transition-all duration-200 dark:bg-[#1c1a16]/95 ${
+              contactsNearBottom ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-3 opacity-0'
+            }`}
+          >
+            {contactsCards}
+          </div>
+        )}
 
         <div className="lg:hidden fixed bottom-0 inset-x-0 z-30 border-t border-[#e0d5c9] dark:border-[#38322a] bg-white/95 dark:bg-[#252119]/95 backdrop-blur-sm px-4 py-3 flex items-center gap-3">
           <div className="flex-1 min-w-0">
