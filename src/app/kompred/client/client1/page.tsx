@@ -478,8 +478,8 @@ function WorkspaceLogo({
     )
   }
 
-  const imgClassName = isLarge ? 'h-28 w-auto' : 'h-10 w-auto'
-  const imgStyle = { maxWidth: isLarge ? 280 : 140, objectFit: 'contain' as const, filter: isLarge ? 'drop-shadow(0 2px 6px rgba(0,0,0,0.25))' : undefined }
+  const imgClassName = isLarge ? 'h-28 w-auto rounded-md' : 'h-10 w-auto'
+  const imgStyle = { maxWidth: isLarge ? 280 : 140, objectFit: 'contain' as const }
 
   return (
     <>
