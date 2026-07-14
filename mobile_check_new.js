@@ -16,52 +16,53 @@ const OUT_DIR = 'C:\\Users\\sgonc\\AppData\\Local\\Temp\\claude\\c--Projects-bat
   await page.goto('https://kp.glavinstrument.com/cli1238', { waitUntil: 'networkidle', timeout: 60000 });
   await page.waitForTimeout(1500);
 
-  // Screenshot 1: top
-  await page.screenshot({ path: `${OUT_DIR}\\mobile_scroll0.png` });
-
-  // Scroll to ~400px
-  await page.evaluate(() => window.scrollTo(0, 400));
-  await page.waitForTimeout(500);
-  await page.screenshot({ path: `${OUT_DIR}\\mobile_scroll400.png` });
-
-  // Scroll to ~1200px
-  await page.evaluate(() => window.scrollTo(0, 1200));
-  await page.waitForTimeout(500);
-  await page.screenshot({ path: `${OUT_DIR}\\mobile_scroll1200.png` });
-
-  // Check img elements
-  const imgInfo = await page.evaluate(() => {
-    const imgs = Array.from(document.querySelectorAll('img'));
-    return imgs.map((img, i) => {
-      const rect = img.getBoundingClientRect();
-      const cs = getComputedStyle(img);
-      let ancestorHidden = false;
-      let el = img;
-      const ancestorStyles = [];
-      while (el && el !== document.body) {
-        const s = getComputedStyle(el);
-        ancestorStyles.push({ tag: el.tagName, cls: el.className, display: s.display, visibility: s.visibility });
-        if (s.display === 'none' || s.visibility === 'hidden') ancestorHidden = true;
-        el = el.parentElement;
-      }
-      return {
-        index: i,
-        src: img.src,
-        className: img.className,
-        parentClassName: img.parentElement ? img.parentElement.className : null,
-        rect,
-        display: cs.display,
-        visibility: cs.visibility,
-        opacity: cs.opacity,
-        ancestorHidden,
-        ancestorStylesSample: ancestorStyles.slice(0, 6),
-      };
+  // Find the actual scrollable container
+  const scrollInfo = await page.evaluate(() => {
+    const candidates = Array.from(document.querySelectorAll('*')).filter((el) => {
+      const s = getComputedStyle(el);
+      return (s.overflowY === 'auto' || s.overflowY === 'scroll') && el.scrollHeight > el.clientHeight;
     });
+    return candidates.map((el) => ({
+      tag: el.tagName,
+      cls: el.className,
+      scrollHeight: el.scrollHeight,
+      clientHeight: el.clientHeight,
+    }));
   });
+  console.log('SCROLL_CANDIDATES', JSON.stringify(scrollInfo, null, 2));
 
-  console.log('IMG_INFO_JSON_START');
-  console.log(JSON.stringify(imgInfo, null, 2));
-  console.log('IMG_INFO_JSON_END');
+  async function scrollAndShot(y, path) {
+    await page.evaluate((yy) => {
+      const el = document.querySelector('div.flex-1.min-h-0.overflow-y-auto') || document.scrollingElement;
+      if (el) el.scrollTop = yy;
+      window.scrollTo(0, yy);
+    }, y);
+    await page.waitForTimeout(600);
+    await page.screenshot({ path });
+  }
+
+  await scrollAndShot(0, `${OUT_DIR}\\mobile_scroll0.png`);
+  await scrollAndShot(400, `${OUT_DIR}\\mobile_scroll400.png`);
+  await scrollAndShot(1200, `${OUT_DIR}\\mobile_scroll1200.png`);
+
+  // Report actual scrollTop achieved
+  const finalScroll = await page.evaluate(() => {
+    const el = document.querySelector('div.flex-1.min-h-0.overflow-y-auto');
+    return { scrollTop: el ? el.scrollTop : null, windowScrollY: window.scrollY };
+  });
+  console.log('FINAL_SCROLL', JSON.stringify(finalScroll));
+
+  // Sticky photo rect at this scroll position
+  const stickyRect = await page.evaluate(() => {
+    const imgs = Array.from(document.querySelectorAll('img'));
+    const sticky = imgs.find((img) => img.closest('.sticky'));
+    if (!sticky) return null;
+    const rect = sticky.getBoundingClientRect();
+    const wrapper = sticky.closest('.sticky');
+    const wrapperRect = wrapper.getBoundingClientRect();
+    return { imgRect: rect, wrapperRect, wrapperClass: wrapper.className, imgSrc: sticky.src, naturalWidth: sticky.naturalWidth, naturalHeight: sticky.naturalHeight };
+  });
+  console.log('STICKY_RECT', JSON.stringify(stickyRect, null, 2));
 
   await browser.close();
 })().catch((err) => {
