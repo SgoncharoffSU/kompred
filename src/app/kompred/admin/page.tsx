@@ -1321,6 +1321,10 @@ export default function AdminPage() {
     fetch('/api/auth/me')
       .then((r) => r.json())
       .then((d) => {
+        if (!d.ok) {
+          window.location.href = '/login'
+          return
+        }
         if (d.subscription) setSubscription(d.subscription)
       })
     const match = window.location.pathname.match(/\/admin(\d+)/)
