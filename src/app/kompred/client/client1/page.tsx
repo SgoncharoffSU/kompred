@@ -1867,14 +1867,14 @@ export default function ClientPage() {
   // Switching layout can hide groups scoped to a different layout — drop any selections made
   // inside them so they don't keep silently contributing to the price.
   useEffect(() => {
-    const hiddenGroupIds = new Set(
+    const hiddenByLayout = new Set(
       groups.filter((g) => g.layout_ids && g.layout_ids.length > 0 && (!selectedLayoutId || !g.layout_ids.map(String).includes(selectedLayoutId))).map((g) => g.id)
     )
-    if (hiddenGroupIds.size === 0) return
+    if (hiddenByLayout.size === 0) return
     setSelectedOptions((prev) => {
       let changed = false
       const next = { ...prev }
-      hiddenGroupIds.forEach((gid) => {
+      hiddenByLayout.forEach((gid) => {
         if (next[gid]) {
           changed = true
           delete next[gid]
