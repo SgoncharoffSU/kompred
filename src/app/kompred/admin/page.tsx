@@ -2121,6 +2121,8 @@ export default function AdminPage() {
     const isOpen = expandedGroups.has(group.id)
     const exclusionOpen = groupExclusionPopover?.type === 'group' && groupExclusionPopover.id === group.id
     const exclusionCount = allExclusionItems.filter((it) => !(it.type === 'group' && it.id === group.id) && isExcludedPair('group', group.id, it.type, it.id)).length
+    const visibilityOpen = groupVisibilityPopover?.type === 'group' && groupVisibilityPopover.id === group.id
+    const visibilityCount = allExclusionItems.filter((it) => !(it.type === 'group' && it.id === group.id) && visibilityEffectFor('group', group.id, it.type, it.id) !== null).length
     const blockMeta = BLOCK_TYPES.find((bt) => bt.type === (group.block_type || 'options'))
 
     return (
