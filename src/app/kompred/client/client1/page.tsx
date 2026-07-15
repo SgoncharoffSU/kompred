@@ -1025,7 +1025,7 @@ function ClassicDesign(props: DesignProps) {
 
           <div className="relative z-10 mx-auto max-w-[1280px] px-4 pb-6 pt-16 md:px-8 md:pb-10 md:pt-20 lg:h-full lg:flex lg:flex-col lg:pt-10">
             <div className="bg-[#f2ece4] dark:bg-[#1c1a16] lg:flex lg:flex-1 lg:flex-col lg:min-h-0">
-            <div className="mb-6 lg:shrink-0">
+            <div className="mb-6 lg:shrink-0 lg:pl-[340px]">
               {(pageTitle || workspaceName) && (
                 <h1 className="text-2xl font-extrabold tracking-tight text-[#1a1612] dark:text-[#ede7de] md:text-3xl">{pageTitle || workspaceName}</h1>
               )}
