@@ -291,8 +291,8 @@ export default async function OfferPage({ params }: { params: { slug: string } }
         </div>
 
         {/* Actions — kept off the green price block so they read as normal buttons, not
-            washed-out white-on-teal ones */}
-        <div className="flex flex-wrap gap-2">
+            washed-out white-on-teal ones; hidden on the printed PDF since they aren't actionable there */}
+        <div className="print:hidden flex flex-wrap gap-2">
           {hasContactInfo && (
             <a
               href="#contacts"
