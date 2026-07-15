@@ -377,6 +377,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'bootstrap') {
     $res5 = $stmt5->get_result();
     while ($row = $res5->fetch_assoc()) $exclusions[] = stringify_row($row);
 
+    $visibility_rules = array();
+    $stmt6 = $db->prepare('SELECT id,trigger_type,trigger_id,target_type,target_id,effect FROM visibility_rules WHERE workspace_id=?');
+    $stmt6->bind_param('i', $WORKSPACE_ID);
+    $stmt6->execute();
+    $res6 = $stmt6->get_result();
+    while ($row = $res6->fetch_assoc()) $visibility_rules[] = stringify_row($row);
+
     $media = media_rows($db, $WORKSPACE_ID);
     $stmt4 = $db->prepare('SELECT id,name,created_at FROM media_folders WHERE workspace_id=? ORDER BY id ASC');
     $stmt4->bind_param('i', $WORKSPACE_ID);
@@ -384,7 +391,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'bootstrap') {
     $res4 = $stmt4->get_result();
     while ($row = $res4->fetch_assoc()) $folders[] = stringify_row($row);
 
-    json_out(array('ok' => true, 'models' => $models, 'options' => $options, 'groups' => $groups, 'exclusions' => $exclusions, 'media' => $media, 'folders' => $folders));
+    json_out(array('ok' => true, 'models' => $models, 'options' => $options, 'groups' => $groups, 'exclusions' => $exclusions, 'visibility_rules' => $visibility_rules, 'media' => $media, 'folders' => $folders));
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'media_list') {
