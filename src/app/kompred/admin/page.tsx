@@ -2473,10 +2473,12 @@ export default function AdminPage() {
   const renderOptionCard = (option: AdminOption) => {
     const isActive = option.active_model_ids.includes(Number(selectedModelId))
     const exclusionCount = allExclusionItems.filter((it) => !(it.type === 'option' && it.id === option.id) && isExcludedPair('option', option.id, it.type, it.id)).length
+    const visibilityCount = allExclusionItems.filter((it) => !(it.type === 'option' && it.id === option.id) && visibilityEffectFor('option', option.id, it.type, it.id) !== null).length
     const modelPhoto = option.model_photos[selectedModelId]
     const displayUrl = modelPhoto?.image_url || option.image_url
     const displayCrop = modelPhoto ? modelPhoto.image_crop : option.image_crop
     const exclusionOpen = optionExclusionPopover?.id === option.id
+    const visibilityOpen = optionVisibilityPopover?.id === option.id
 
     return (
       <DragHandleRow key={option.id} id={option.id}>
