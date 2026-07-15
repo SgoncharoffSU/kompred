@@ -100,10 +100,13 @@ function formatPrice(value: number) {
 }
 
 function formatDate(dateStr: string) {
+  // The server (and MySQL's NOW()) runs on UTC, 3 hours behind Moscow — without an explicit
+  // timeZone here the date can roll over up to 3 hours late for Moscow-based visitors.
   return new Date(dateStr).toLocaleDateString('ru-RU', {
     day: '2-digit',
     month: 'long',
     year: 'numeric',
+    timeZone: 'Europe/Moscow',
   })
 }
 
@@ -138,7 +141,7 @@ export default async function OfferPage({ params }: { params: { slug: string } }
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#0d5a52] text-base">
             🛁
           </div>
-          <span className="text-sm font-bold text-[#1a1612]">Баня-конфигуратор</span>
+          <span className="text-sm font-bold text-[#1a1612]">СК СИБЕРИЯ</span>
         </div>
 
         {/* Hero photo */}

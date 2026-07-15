@@ -131,7 +131,14 @@ function parseCropSafe(raw: string | null | undefined): CropRect | null {
   if (!raw) return null
   try {
     const parsed = JSON.parse(raw)
-    return parsed && typeof parsed.x === 'number' ? parsed : null
+    if (!parsed || typeof parsed.x !== 'number') return null
+    // {x:0,y:0,w:100,h:100} with no mode is the "never customized" default — treat as no crop
+    // so the image falls back to a normal centered object-cover instead of the legacy
+    // top-left-anchored crop math, which looks wrong for any photo that isn't already square.
+    if (!parsed.mode && parsed.x === 0 && parsed.y === 0 && (parsed.w === undefined || parsed.w === 100) && (parsed.h === undefined || parsed.h === 100)) {
+      return null
+    }
+    return parsed
   } catch {
     return null
   }
@@ -975,12 +982,25 @@ function ClassicDesign(props: DesignProps) {
     )
   })
 
+  const headerPhone = visibleContactBlocks.find((b) => b.data.phone)?.data.phone
+
   return (
     <>
       <main className="h-screen flex flex-col bg-[#f2ece4] dark:bg-[#1c1a16]">
         <header className="relative shrink-0 z-40 border-b border-[#e0d5c9] dark:border-[#38322a] bg-white/90 dark:bg-[#252119]/90 backdrop-blur-sm">
           <div className="mx-auto flex max-w-[1280px] items-center justify-end gap-4 px-4 py-2 md:px-8">
             <div className="flex items-center gap-3">
+              {headerPhone && (
+                <a
+                  href={`tel:${headerPhone.replace(/\s/g, '')}`}
+                  className="flex items-center gap-1.5 text-sm font-semibold text-[#0d5a52] dark:text-[#4db8ae] hover:text-[#0a453f] dark:hover:text-[#5fcabf]"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M22 16.92v3a2 2 0 0 1-2.18 2A19.79 19.79 0 0 1 11.39 19a19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" />
+                  </svg>
+                  {headerPhone}
+                </a>
+              )}
               <ThemeToggle />
             </div>
           </div>
@@ -2052,6 +2072,25 @@ export default function ClientPage() {
     })
   }
 
+  // In a single-select group, activating one stepper/dimension option must deactivate any
+  // sibling so the group can't end up with two options priced in at once.
+  const clearSiblingsInSingleSelectGroup = (groupId: string, keepOptionId: string) => {
+    const group = groups.find((g) => g.id === groupId)
+    if (group?.selection_type !== 'single') return
+    const siblingIds = (optionsByGroup[groupId] || []).map((o) => o.id).filter((id) => id !== keepOptionId)
+    if (!siblingIds.length) return
+    setQuantities((prev) => {
+      const next = { ...prev }
+      siblingIds.forEach((id) => delete next[id])
+      return next
+    })
+    setDimensions((prev) => {
+      const next = { ...prev }
+      siblingIds.forEach((id) => delete next[id])
+      return next
+    })
+  }
+
   const setQuantity = (optionId: string, qty: number) => {
     if (qty > 0 && disabledOptionIds.has(optionId)) {
       const groupId = groupIdByOptionId(optionId)
@@ -2073,8 +2112,11 @@ export default function ClientPage() {
       const current = prev[groupId] || []
       const has = current.includes(optionId)
       if (qty <= 0) return has ? { ...prev, [groupId]: current.filter((id) => id !== optionId) } : prev
+      const group = groups.find((g) => g.id === groupId)
+      if (group?.selection_type === 'single') return { ...prev, [groupId]: [optionId] }
       return has ? prev : { ...prev, [groupId]: [...current, optionId] }
     })
+    if (qty > 0) clearSiblingsInSingleSelectGroup(groupId, optionId)
   }
 
   const setOptionDimensions = (optionId: string, next: { length: number; width: number }) => {
@@ -2099,8 +2141,11 @@ export default function ClientPage() {
       const current = prev[groupId] || []
       const has = current.includes(optionId)
       if (!isSelected) return has ? { ...prev, [groupId]: current.filter((id) => id !== optionId) } : prev
+      const group = groups.find((g) => g.id === groupId)
+      if (group?.selection_type === 'single') return { ...prev, [groupId]: [optionId] }
       return has ? prev : { ...prev, [groupId]: [...current, optionId] }
     })
+    if (isSelected) clearSiblingsInSingleSelectGroup(groupId, optionId)
   }
 
   const createOffer = async () => {

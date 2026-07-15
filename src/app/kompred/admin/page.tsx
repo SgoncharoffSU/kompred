@@ -126,7 +126,14 @@ function parseCropSafe(raw: string | null): CropRect | null {
   if (!raw) return null
   try {
     const parsed = JSON.parse(raw)
-    return parsed && typeof parsed.x === 'number' ? parsed : null
+    if (!parsed || typeof parsed.x !== 'number') return null
+    // {x:0,y:0,w:100,h:100} with no mode is the "never customized" default — treat as no crop
+    // so the image falls back to a normal centered object-cover instead of the legacy
+    // top-left-anchored crop math, which looks wrong for any photo that isn't already square.
+    if (!parsed.mode && parsed.x === 0 && parsed.y === 0 && (parsed.w === undefined || parsed.w === 100) && (parsed.h === undefined || parsed.h === 100)) {
+      return null
+    }
+    return parsed
   } catch {
     return null
   }
