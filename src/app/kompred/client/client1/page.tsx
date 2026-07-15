@@ -731,6 +731,8 @@ interface DesignProps {
   quantities: Record<string, number>
   dimensions: Record<string, { length: number; width: number }>
   disabledOptionIds: Set<string>
+  hiddenGroupIds: Set<string>
+  hiddenOptionIds: Set<string>
   loading: boolean
   saving: boolean
   offerLink: string
