@@ -789,6 +789,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'delete_option') {
     $id = intval(isset($_POST['id']) ? $_POST['id'] : 0);
     if ($id <= 0) json_out(array('ok' => false, 'error' => 'id required'));
     $db->query("DELETE FROM exclusion_rules WHERE workspace_id=$WORKSPACE_ID AND ((a_type='option' AND a_id=$id) OR (b_type='option' AND b_id=$id))");
+    $db->query("DELETE FROM visibility_rules WHERE workspace_id=$WORKSPACE_ID AND ((trigger_type='option' AND trigger_id=$id) OR (target_type='option' AND target_id=$id))");
     $stmt = $db->prepare('DELETE FROM options_catalog WHERE id=? AND workspace_id=?');
     $stmt->bind_param('ii', $id, $WORKSPACE_ID);
     if (!$stmt->execute()) json_out(array('ok' => false, 'error' => $db->error));
@@ -1212,9 +1213,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'delete_group') {
         if (count($option_ids) > 0) {
             $opt_in = implode(',', $option_ids);
             $db->query("DELETE FROM exclusion_rules WHERE workspace_id=$WORKSPACE_ID AND ((a_type='option' AND a_id IN ($opt_in)) OR (b_type='option' AND b_id IN ($opt_in)))");
+            $db->query("DELETE FROM visibility_rules WHERE workspace_id=$WORKSPACE_ID AND ((trigger_type='option' AND trigger_id IN ($opt_in)) OR (target_type='option' AND target_id IN ($opt_in)))");
             $db->query("DELETE FROM options_catalog WHERE id IN ($opt_in) AND workspace_id=$WORKSPACE_ID");
         }
         $db->query("DELETE FROM exclusion_rules WHERE workspace_id=$WORKSPACE_ID AND ((a_type='group' AND a_id=$id) OR (b_type='group' AND b_id=$id))");
+        $db->query("DELETE FROM visibility_rules WHERE workspace_id=$WORKSPACE_ID AND ((trigger_type='group' AND trigger_id=$id) OR (target_type='group' AND target_id=$id))");
         $db->query("DELETE FROM option_groups WHERE id=$id AND workspace_id=$WORKSPACE_ID");
 
         $db->commit();
@@ -1268,6 +1271,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'delete_exclusion') {
     list($a_type, $a_id, $b_type, $b_id) = normalize_pair($a_type, $a_id, $b_type, $b_id);
     $stmt = $db->prepare('DELETE FROM exclusion_rules WHERE a_type=? AND a_id=? AND b_type=? AND b_id=? AND workspace_id=?');
     $stmt->bind_param('sisii', $a_type, $a_id, $b_type, $b_id, $WORKSPACE_ID);
+    $stmt->execute();
+    json_out(array('ok' => true));
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'create_visibility_rule') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    $trigger_type = isset($data['trigger_type']) ? trim($data['trigger_type']) : '';
+    $trigger_id   = intval(isset($data['trigger_id']) ? $data['trigger_id'] : 0);
+    $target_type  = isset($data['target_type']) ? trim($data['target_type']) : '';
+    $target_id    = intval(isset($data['target_id']) ? $data['target_id'] : 0);
+    $effect       = isset($data['effect']) ? trim($data['effect']) : 'hide';
+    if (!in_array($trigger_type, array('group','option')) || !in_array($target_type, array('group','option')) || $trigger_id <= 0 || $target_id <= 0) {
+        json_out(array('ok' => false, 'error' => 'trigger_type/trigger_id/target_type/target_id required'));
+    }
+    if (!in_array($effect, array('show','hide'))) $effect = 'hide';
+    if ($trigger_type === $target_type && $trigger_id === $target_id) {
+        json_out(array('ok' => false, 'error' => 'cannot target itself'));
+    }
+    $triggerOwned = $trigger_type === 'group' ? group_owned_by_workspace($db, $trigger_id, $WORKSPACE_ID) : option_owned_by_workspace($db, $trigger_id, $WORKSPACE_ID);
+    $targetOwned = $target_type === 'group' ? group_owned_by_workspace($db, $target_id, $WORKSPACE_ID) : option_owned_by_workspace($db, $target_id, $WORKSPACE_ID);
+    if (!$triggerOwned || !$targetOwned) json_out(array('ok' => false, 'error' => 'trigger or target not found'));
+    $stmt = $db->prepare('INSERT INTO visibility_rules (trigger_type,trigger_id,target_type,target_id,effect,workspace_id) VALUES (?,?,?,?,?,?) ON DUPLICATE KEY UPDATE effect=VALUES(effect)');
+    $stmt->bind_param('sisssi', $trigger_type, $trigger_id, $target_type, $target_id, $effect, $WORKSPACE_ID);
+    $stmt->execute();
+    json_out(array('ok' => true, 'id' => $db->insert_id));
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'delete_visibility_rule') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    $id = isset($data['id']) ? intval($data['id']) : 0;
+    if ($id > 0) {
+        $stmt = $db->prepare('DELETE FROM visibility_rules WHERE id=? AND workspace_id=?');
+        $stmt->bind_param('ii', $id, $WORKSPACE_ID);
+        $stmt->execute();
+        json_out(array('ok' => true));
+    }
+    $trigger_type = isset($data['trigger_type']) ? trim($data['trigger_type']) : '';
+    $trigger_id   = intval(isset($data['trigger_id']) ? $data['trigger_id'] : 0);
+    $target_type  = isset($data['target_type']) ? trim($data['target_type']) : '';
+    $target_id    = intval(isset($data['target_id']) ? $data['target_id'] : 0);
+    if ($trigger_id <= 0 || $target_id <= 0) json_out(array('ok' => false, 'error' => 'id or trigger/target pair required'));
+    $stmt = $db->prepare('DELETE FROM visibility_rules WHERE trigger_type=? AND trigger_id=? AND target_type=? AND target_id=? AND workspace_id=?');
+    $stmt->bind_param('sisii', $trigger_type, $trigger_id, $target_type, $target_id, $WORKSPACE_ID);
     $stmt->execute();
     json_out(array('ok' => true));
 }
@@ -1368,6 +1414,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'delete_option_json') {
     $id = intval(isset($data['id']) ? $data['id'] : 0);
     if ($id <= 0) json_out(array('ok' => false, 'error' => 'id required'));
     $db->query("DELETE FROM exclusion_rules WHERE workspace_id=$WORKSPACE_ID AND ((a_type='option' AND a_id=$id) OR (b_type='option' AND b_id=$id))");
+    $db->query("DELETE FROM visibility_rules WHERE workspace_id=$WORKSPACE_ID AND ((trigger_type='option' AND trigger_id=$id) OR (target_type='option' AND target_id=$id))");
     $stmt = $db->prepare('DELETE FROM options_catalog WHERE id=? AND workspace_id=?');
     $stmt->bind_param('ii', $id, $WORKSPACE_ID);
     if (!$stmt->execute()) json_out(array('ok' => false, 'error' => $db->error));
