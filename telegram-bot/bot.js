@@ -1,10 +1,4 @@
 require('dotenv').config()
-const https = require('https')
-const http = require('http')
-// This VPS has no working outbound IPv6 route ("Network is unreachable"), but Node/the
-// underlying request library still tries it first — force IPv4 for all outbound requests.
-https.globalAgent.options.family = 4
-http.globalAgent.options.family = 4
 const TelegramBot = require('node-telegram-bot-api')
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN
