@@ -58,6 +58,10 @@ bot.on('message', (msg) => {
   }
 })
 
-bot.on('polling_error', (err) => console.error('polling_error', err.message))
+bot.on('polling_error', (err) => {
+  console.error('polling_error', err.message)
+  if (err.errors) console.error('nested errors:', JSON.stringify(err.errors, Object.getOwnPropertyNames(err.errors[0] || {})))
+  console.error(err.stack)
+})
 
 console.log('Telegram bot started (long polling)')
