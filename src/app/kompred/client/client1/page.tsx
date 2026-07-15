@@ -832,7 +832,7 @@ function ClassicDesign(props: DesignProps) {
   const rows: RenderRow[] = []
   let pendingOptionGroups: ClientGroup[] = []
   for (const g of groups) {
-    if (!layoutAllowed(g)) continue
+    if (!layoutAllowed(g) || hiddenGroupIds.has(g.id)) continue
     const blockType = g.block_type || 'options'
     if (blockType === 'popup' || blockType === 'delivery' || blockType === 'contacts') {
       if (pendingOptionGroups.length) {
