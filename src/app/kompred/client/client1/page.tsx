@@ -503,47 +503,6 @@ function Skeleton({ className = '' }: { className?: string }) {
   return <div className={`animate-pulse rounded-xl bg-[#e8ddd3] dark:bg-[#2e2820] ${className}`} />
 }
 
-function WorkspaceLogo({
-  logoLightUrl,
-  logoDarkUrl,
-  workspaceName,
-  size = 'sm',
-}: {
-  logoLightUrl?: string
-  logoDarkUrl?: string
-  workspaceName?: string
-  size?: 'sm' | 'lg'
-}) {
-  const isLarge = size === 'lg'
-
-  if (!logoLightUrl && !logoDarkUrl) {
-    return (
-      <div className="flex items-center gap-2">
-        <div
-          className={`shrink-0 flex items-center justify-center rounded-lg bg-[#0d5a52] font-black text-white ${
-            isLarge ? 'h-12 w-12 text-sm' : 'h-8 w-8 text-[9px]'
-          }`}
-        >
-          КП
-        </div>
-        {workspaceName && <div className="pr-2 text-xs text-[#7a6f66] dark:text-[#9a8f87] leading-snug font-semibold">{workspaceName}</div>}
-      </div>
-    )
-  }
-
-  const imgClassName = isLarge ? 'h-28 w-auto rounded-md' : 'h-10 w-auto'
-  const imgStyle = { maxWidth: isLarge ? 280 : 140, objectFit: 'contain' as const }
-
-  return (
-    <>
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={logoLightUrl || logoDarkUrl} alt={workspaceName || 'Логотип'} className={`${imgClassName} dark:hidden`} style={imgStyle} />
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={logoDarkUrl || logoLightUrl} alt={workspaceName || 'Логотип'} className={`${imgClassName} hidden dark:block`} style={imgStyle} />
-    </>
-  )
-}
-
 // ── Modals ───────────────────────────────────────────────────────────────────
 
 function InclusionPopup({ title, sections, onClose }: { title: string; sections: InclusionSection[]; onClose: () => void }) {
@@ -710,8 +669,6 @@ function ConflictDialog({
 
 interface DesignProps {
   workspaceName: string
-  logoLightUrl: string
-  logoDarkUrl: string
   pageTitle: string
   pageSubtitle: string
   ctaText: string
@@ -764,8 +721,6 @@ type RenderRow = { kind: 'options'; groups: ClientGroup[] } | { kind: 'popup' | 
 function ClassicDesign(props: DesignProps) {
   const {
     workspaceName,
-    logoLightUrl,
-    logoDarkUrl,
     pageTitle,
     pageSubtitle,
     ctaText,
@@ -1041,7 +996,8 @@ function ClassicDesign(props: DesignProps) {
             </div>
           </div>
           <div className="absolute left-4 top-full z-50 flex -translate-y-1/2 items-center gap-3 md:left-8">
-            <WorkspaceLogo logoLightUrl={logoLightUrl} logoDarkUrl={logoDarkUrl} workspaceName={workspaceName} size="lg" />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo-siberia.svg" alt={workspaceName || 'СК Сибирия'} className="h-28 w-auto drop-shadow-[0_1px_3px_rgba(255,255,255,0.5)]" />
             <span
               className={`${brandFont.className} text-4xl leading-none tracking-wide text-[#0d5a52] drop-shadow-[0_1px_2px_rgba(255,255,255,0.6)] dark:text-[#5fcabf] dark:drop-shadow-[0_1px_3px_rgba(0,0,0,0.5)] md:text-5xl`}
             >
@@ -1830,8 +1786,6 @@ function ClassicDesign(props: DesignProps) {
 
 export default function ClientPage() {
   const [workspaceName, setWorkspaceName] = useState('')
-  const [logoLightUrl, setLogoLightUrl] = useState('')
-  const [logoDarkUrl, setLogoDarkUrl] = useState('')
   const [pageTitle, setPageTitle] = useState('')
   const [pageSubtitle, setPageSubtitle] = useState('')
   const [ctaText, setCtaText] = useState('')
@@ -1897,8 +1851,6 @@ export default function ClientPage() {
         if (designOverride && ['classic', 'modern', 'minimal'].includes(designOverride)) setClientDesign(designOverride as any)
         else if (data.client_design) setClientDesign(data.client_design)
         if (data.workspace_name) setWorkspaceName(data.workspace_name)
-        if (data.logo_light_url) setLogoLightUrl(data.logo_light_url)
-        if (data.logo_dark_url) setLogoDarkUrl(data.logo_dark_url)
         if (data.page_title) setPageTitle(data.page_title)
         if (data.page_subtitle) setPageSubtitle(data.page_subtitle)
         if (data.cta_text) setCtaText(data.cta_text)
@@ -2316,8 +2268,6 @@ export default function ClientPage() {
 
   const designProps: DesignProps = {
     workspaceName,
-    logoLightUrl,
-    logoDarkUrl,
     pageTitle,
     pageSubtitle,
     ctaText,

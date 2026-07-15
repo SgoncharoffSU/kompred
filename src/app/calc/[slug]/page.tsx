@@ -46,6 +46,24 @@ type ContactBlock = {
   data: { phone?: string; telegram?: string; whatsapp?: string; email?: string; address?: string; note?: string }
 }
 
+type InclusionSection = {
+  id: string
+  name: string
+  items: string[]
+  model_ids?: string[] | null
+}
+
+type PopupBlock = {
+  id: string
+  type: string
+  title: string
+  data: { sections?: InclusionSection[] }
+}
+
+function sectionsForModel(sections: InclusionSection[], modelId: string): InclusionSection[] {
+  return sections.filter((s) => !s.model_ids || s.model_ids.length === 0 || s.model_ids.includes(modelId))
+}
+
 async function getCalculation(slug: string): Promise<OfferData | null> {
   const phpApi = process.env.PHP_API_URL || 'http://127.0.0.1:8080/api/index.php'
   try {
@@ -85,12 +103,11 @@ async function getCalculation(slug: string): Promise<OfferData | null> {
 type WorkspaceInfo = {
   contactBlocks: ContactBlock[]
   workspaceName: string
-  logoLightUrl: string
-  logoDarkUrl: string
+  popupBlocks: PopupBlock[]
 }
 
 async function getWorkspaceInfo(account: string): Promise<WorkspaceInfo> {
-  const empty: WorkspaceInfo = { contactBlocks: [], workspaceName: '', logoLightUrl: '', logoDarkUrl: '' }
+  const empty: WorkspaceInfo = { contactBlocks: [], workspaceName: '', popupBlocks: [] }
   const siteUrl = process.env.SITE_URL || 'http://127.0.0.1:8016'
   try {
     const res = await fetch(`${siteUrl}/api/workspace-lookup?account=${encodeURIComponent(account)}`, { cache: 'no-store' })
@@ -99,8 +116,7 @@ async function getWorkspaceInfo(account: string): Promise<WorkspaceInfo> {
     return {
       contactBlocks: Array.isArray(data.contact_blocks) ? data.contact_blocks : [],
       workspaceName: data.workspace_name || '',
-      logoLightUrl: normalizeUrl(data.logo_light_url || ''),
-      logoDarkUrl: normalizeUrl(data.logo_dark_url || ''),
+      popupBlocks: Array.isArray(data.popup_blocks) ? data.popup_blocks : [],
     }
   } catch {
     return empty
@@ -128,11 +144,16 @@ function formatDate(dateStr: string) {
 
 export default async function OfferPage({ params }: { params: { slug: string } }) {
   const offer = await getCalculation(params.slug)
-  const workspaceInfo = offer?.account ? await getWorkspaceInfo(offer.account) : { contactBlocks: [], workspaceName: '', logoLightUrl: '', logoDarkUrl: '' }
-  const { contactBlocks, workspaceName, logoLightUrl, logoDarkUrl } = workspaceInfo
+  const workspaceInfo = offer?.account ? await getWorkspaceInfo(offer.account) : { contactBlocks: [], workspaceName: '', popupBlocks: [] }
+  const { contactBlocks, workspaceName, popupBlocks } = workspaceInfo
   const hasContactInfo = contactBlocks.some((b) => b.data.phone || b.data.email || b.data.address || b.data.telegram || b.data.whatsapp)
   const headerPhone = contactBlocks.find((b) => b.data.phone)?.data.phone
   const editUrl = offer?.account ? `/cli${offer.account}${offer.model_id ? `?model=${offer.model_id}` : ''}` : null
+  const inclusionSections = offer
+    ? popupBlocks
+        .filter((b) => b.type === 'inclusion')
+        .flatMap((b) => sectionsForModel(b.data.sections || [], offer.model_id))
+    : []
 
   if (!offer) {
     return (
@@ -157,14 +178,8 @@ export default async function OfferPage({ params }: { params: { slug: string } }
         {/* Brand mark */}
         <div className="mb-2 flex items-center justify-between gap-2 px-1">
           <div className="flex items-center gap-2">
-            {logoLightUrl || logoDarkUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={logoLightUrl || logoDarkUrl} alt={workspaceName || 'Логотип'} className="h-8 w-auto" />
-            ) : (
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#0d5a52] text-base">
-                🛁
-              </div>
-            )}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo-siberia.svg" alt={workspaceName || 'СК Сибирия'} className="h-8 w-auto" />
             <span className={`${brandFont.className} text-xl leading-none tracking-wide text-[#0d5a52]`}>{workspaceName || 'СК СИБЕРИЯ'}</span>
           </div>
           {headerPhone && (
@@ -220,6 +235,30 @@ export default async function OfferPage({ params }: { params: { slug: string } }
             </div>
           </div>
         </div>
+
+        {/* Base package inclusions — screen only, excluded from the printed PDF */}
+        {inclusionSections.length > 0 && (
+          <div className="print:hidden overflow-hidden rounded-2xl border border-[#e0d5c9] bg-white shadow-card">
+            <div className="border-b border-[#e0d5c9] px-6 py-3.5">
+              <span className="text-xs font-semibold uppercase tracking-widest text-[#7a6f66]">Что входит в базовую стоимость</span>
+            </div>
+            <div className="divide-y divide-[#e0d5c9]">
+              {inclusionSections.map((section) => (
+                <div key={section.id} className="px-6 py-4">
+                  <div className="text-sm font-semibold text-[#1a1612]">{section.name}</div>
+                  <ul className="mt-2 space-y-1.5">
+                    {section.items.map((item, i) => (
+                      <li key={i} className="flex items-start gap-2 text-sm text-[#7a6f66]">
+                        <span className="mt-1 h-1 w-1 shrink-0 rounded-full bg-[#0d5a52]" />
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Options list */}
         {offer.selected_options.length > 0 && (
