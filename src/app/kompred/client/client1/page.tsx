@@ -89,6 +89,15 @@ interface Exclusion {
   b_id: string
 }
 
+interface VisibilityRule {
+  id: string
+  trigger_type: 'option' | 'group'
+  trigger_id: string
+  target_type: 'option' | 'group'
+  target_id: string
+  effect: 'show' | 'hide'
+}
+
 interface DeliveryConfig {
   km_label?: string
   base?: { label: string; base_price?: number; price_per_km?: number }
