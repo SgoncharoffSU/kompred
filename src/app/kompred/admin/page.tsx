@@ -2039,6 +2039,30 @@ export default function AdminPage() {
     }
   }
 
+  const visibilityEffectFor = (triggerType: 'option' | 'group', triggerId: string, targetType: 'option' | 'group', targetId: string): VisibilityEffect | null => {
+    const rule = visibilityRules.find((r) => r.trigger_type === triggerType && String(r.trigger_id) === triggerId && r.target_type === targetType && String(r.target_id) === targetId)
+    return rule ? rule.effect : null
+  }
+
+  const setVisibilityEffect = async (triggerType: 'option' | 'group', triggerId: string, targetType: 'option' | 'group', targetId: string, effect: VisibilityEffect | null) => {
+    const existing = visibilityRules.find((r) => r.trigger_type === triggerType && String(r.trigger_id) === triggerId && r.target_type === targetType && String(r.target_id) === targetId)
+    if (effect === null) {
+      if (existing) {
+        await phpPost('delete_visibility_rule', { id: Number(existing.id) })
+        setVisibilityRules((prev) => prev.filter((r) => r.id !== existing.id))
+      }
+      return
+    }
+    const res = await phpPost('create_visibility_rule', { trigger_type: triggerType, trigger_id: Number(triggerId), target_type: targetType, target_id: Number(targetId), effect })
+    if (res.ok) {
+      if (existing) {
+        setVisibilityRules((prev) => prev.map((r) => (r.id === existing.id ? { ...r, effect } : r)))
+      } else if (res.id) {
+        setVisibilityRules((prev) => [...prev, { id: String(res.id), trigger_type: triggerType, trigger_id: Number(triggerId), target_type: targetType, target_id: Number(targetId), effect }])
+      }
+    }
+  }
+
   const requestDeleteOption = (optionId: string, name: string) => {
     setDeleteOptionError('')
     setDeleteOptionConfirm({ optionId, name })
