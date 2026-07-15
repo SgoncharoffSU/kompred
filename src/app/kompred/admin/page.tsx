@@ -2538,6 +2538,34 @@ export default function AdminPage() {
                 />
               )}
             </div>
+            <div className="relative flex-1">
+              <button
+                onClick={(e) => {
+                  if (visibilityOpen) {
+                    setOptionVisibilityPopover(null)
+                    return
+                  }
+                  const rect = e.currentTarget.getBoundingClientRect()
+                  setOptionVisibilityPopover({ id: option.id, anchorTop: rect.top, anchorBottom: rect.bottom, left: rect.right - 300 })
+                }}
+                title="Показ/скрытие других блоков и опций при выборе этой опции"
+                className={`flex h-6 items-center gap-0.5 rounded px-1.5 text-[10px] hover:bg-slate-100 dark:hover:bg-[#2a2520] ${visibilityCount > 0 ? 'text-sky-600 font-semibold' : 'text-slate-400 dark:text-[#6a5f57]'}`}
+              >
+                👁{visibilityCount > 0 ? ` ${visibilityCount}` : ''}
+              </button>
+              {visibilityOpen && optionVisibilityPopover && (
+                <OptionVisibilityPopover
+                  option={option}
+                  anchorTop={optionVisibilityPopover.anchorTop}
+                  anchorBottom={optionVisibilityPopover.anchorBottom}
+                  left={optionVisibilityPopover.left}
+                  allItems={allExclusionItems}
+                  effectFor={(t, id) => visibilityEffectFor('option', option.id, t, id)}
+                  onSetEffect={(t, id, effect) => setVisibilityEffect('option', option.id, t, id, effect)}
+                  onClose={() => setOptionVisibilityPopover(null)}
+                />
+              )}
+            </div>
             <button onClick={() => !isLocked && requestDeleteOption(option.id, option.name)} disabled={isLocked} title="Удалить" className="flex h-6 w-6 items-center justify-center rounded text-slate-400 dark:text-[#6a5f57] hover:bg-red-50 hover:text-red-500 disabled:opacity-30">
               🗑
             </button>
