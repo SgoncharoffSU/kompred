@@ -2044,6 +2044,37 @@ export default function ClientPage() {
 
   const disabledOptionIds = useMemo(() => new Set(Object.keys(conflictMap)), [conflictMap])
 
+  // "When X is selected, show/hide Y" — distinct from exclusions (which grey out an
+  // incompatible option but keep it visible), these rules remove the target from view entirely.
+  const { hiddenGroupIds, hiddenOptionIds } = useMemo(() => {
+    const optionsInGroup = (groupId: string) => (optionsByGroup[groupId] || []).map((o) => o.id)
+    const isTriggerActive = (rule: VisibilityRule) =>
+      rule.trigger_type === 'option' ? selectedOptionIds.includes(rule.trigger_id) : optionsInGroup(rule.trigger_id).some((oid) => selectedOptionIds.includes(oid))
+
+    const key = (type: 'option' | 'group', id: string) => `${type}:${id}`
+    const showRulesByTarget = new Map<string, VisibilityRule[]>()
+    const hideRulesByTarget = new Map<string, VisibilityRule[]>()
+    visibilityRules.forEach((r) => {
+      const map = r.effect === 'show' ? showRulesByTarget : hideRulesByTarget
+      const k = key(r.target_type, r.target_id)
+      if (!map.has(k)) map.set(k, [])
+      map.get(k)!.push(r)
+    })
+
+    const isHidden = (type: 'option' | 'group', id: string) => {
+      const k = key(type, id)
+      const hideRules = hideRulesByTarget.get(k) || []
+      if (hideRules.some(isTriggerActive)) return true
+      const showRules = showRulesByTarget.get(k) || []
+      if (showRules.length > 0 && !showRules.some(isTriggerActive)) return true
+      return false
+    }
+
+    const gIds = new Set(groups.filter((g) => isHidden('group', g.id)).map((g) => g.id))
+    const oIds = new Set(Object.values(optionsByGroup).flat().filter((o) => isHidden('option', o.id)).map((o) => o.id))
+    return { hiddenGroupIds: gIds, hiddenOptionIds: oIds }
+  }, [visibilityRules, selectedOptionIds, optionsByGroup, groups])
+
   const reasonPhrasesFor = (rules: { ruleKind: 'option' | 'group'; selectedOptionId: string; ruleGroupName: string }[]) => {
     const seen = new Set<string>()
     const phrases: string[] = []
