@@ -249,6 +249,10 @@ $col_check = $db->query("SHOW COLUMNS FROM option_groups LIKE 'model_ids'");
 if ($col_check && $col_check->num_rows === 0) {
     $db->query("ALTER TABLE option_groups ADD COLUMN model_ids TEXT DEFAULT NULL");
 }
+$col_check = $db->query("SHOW COLUMNS FROM option_groups LIKE 'layout_ids'");
+if ($col_check && $col_check->num_rows === 0) {
+    $db->query("ALTER TABLE option_groups ADD COLUMN layout_ids TEXT DEFAULT NULL");
+}
 $col_check = $db->query("SHOW COLUMNS FROM options_catalog LIKE 'max_length'");
 if ($col_check && $col_check->num_rows === 0) {
     $db->query("ALTER TABLE options_catalog ADD COLUMN max_length INT NOT NULL DEFAULT 0");
@@ -344,13 +348,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'bootstrap') {
         $row['model_photos'] = isset($photo_overrides[$oid]) ? $photo_overrides[$oid] : new stdClass();
         $options[] = $row;
     }
-    $stmt3 = $db->prepare('SELECT id,name,sort_order,selection_type,parent_group_id,required,enlarge_photo,block_type,model_ids,created_at FROM option_groups WHERE workspace_id=? ORDER BY sort_order ASC, id ASC');
+    $stmt3 = $db->prepare('SELECT id,name,sort_order,selection_type,parent_group_id,required,enlarge_photo,block_type,model_ids,layout_ids,created_at FROM option_groups WHERE workspace_id=? ORDER BY sort_order ASC, id ASC');
     $stmt3->bind_param('i', $WORKSPACE_ID);
     $stmt3->execute();
     $res3 = $stmt3->get_result();
     while ($row = $res3->fetch_assoc()) {
         $row = stringify_row($row);
         $row['model_ids'] = $row['model_ids'] ? json_decode($row['model_ids'], true) : null;
+        $row['layout_ids'] = $row['layout_ids'] ? json_decode($row['layout_ids'], true) : null;
         $groups[] = $row;
     }
 
@@ -1033,6 +1038,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'update_group_models') 
     json_out(array('ok' => true));
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'update_group_layouts') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    $id = intval(isset($data['id']) ? $data['id'] : 0);
+    if ($id <= 0) json_out(array('ok' => false, 'error' => 'id required'));
+    $layout_ids = isset($data['layout_ids']) && is_array($data['layout_ids']) ? array_values(array_map('intval', $data['layout_ids'])) : null;
+    $encoded = $layout_ids === null ? null : json_encode($layout_ids);
+    $stmt = $db->prepare('UPDATE option_groups SET layout_ids=? WHERE id=? AND workspace_id=?');
+    $stmt->bind_param('sii', $encoded, $id, $WORKSPACE_ID);
+    if (!$stmt->execute()) json_out(array('ok' => false, 'error' => $db->error));
+    json_out(array('ok' => true));
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'duplicate_group') {
     $data = json_decode(file_get_contents('php://input'), true);
     $src_id = intval(isset($data['id']) ? $data['id'] : 0);
@@ -1045,8 +1062,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'duplicate_group') {
         if (!$src) throw new Exception('source not found');
 
         $new_name = substr($src['name'], 0, 150) . ' — копия';
-        $stmt = $db->prepare('INSERT INTO option_groups (name,sort_order,selection_type,parent_group_id,required,enlarge_photo,block_type,model_ids,workspace_id) VALUES (?,?,?,?,?,?,?,?,?)');
-        $stmt->bind_param('sisiiissi', $new_name, $src['sort_order'], $src['selection_type'], $src['parent_group_id'], $src['required'], $src['enlarge_photo'], $src['block_type'], $src['model_ids'], $WORKSPACE_ID);
+        $stmt = $db->prepare('INSERT INTO option_groups (name,sort_order,selection_type,parent_group_id,required,enlarge_photo,block_type,model_ids,layout_ids,workspace_id) VALUES (?,?,?,?,?,?,?,?,?,?)');
+        $stmt->bind_param('sisiiisssi', $new_name, $src['sort_order'], $src['selection_type'], $src['parent_group_id'], $src['required'], $src['enlarge_photo'], $src['block_type'], $src['model_ids'], $src['layout_ids'], $WORKSPACE_ID);
         $stmt->execute();
         $new_group_id = $db->insert_id;
 

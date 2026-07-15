@@ -50,6 +50,7 @@ interface ClientGroup {
   parent_group_id: string | null
   block_type: 'options' | 'popup' | 'delivery' | 'contacts'
   model_ids?: number[] | null
+  layout_ids?: number[] | null
   created_at: string
   updated_at: string
 }
@@ -327,6 +328,7 @@ const groupService = {
         parent_group_id: g.parent_group_id ? String(g.parent_group_id) : null,
         block_type: g.block_type || 'options',
         model_ids: g.model_ids || null,
+        layout_ids: g.layout_ids || null,
         created_at: '',
         updated_at: '',
       })
@@ -794,9 +796,12 @@ function ClassicDesign(props: DesignProps) {
     }
   }
 
+  const layoutAllowed = (g: ClientGroup) => !g.layout_ids || g.layout_ids.length === 0 || (!!selectedLayoutId && g.layout_ids.map(String).includes(selectedLayoutId))
+
   const rows: RenderRow[] = []
   let pendingOptionGroups: ClientGroup[] = []
   for (const g of groups) {
+    if (!layoutAllowed(g)) continue
     const blockType = g.block_type || 'options'
     if (blockType === 'popup' || blockType === 'delivery' || blockType === 'contacts') {
       if (pendingOptionGroups.length) {
@@ -1826,6 +1831,26 @@ export default function ClientPage() {
   const [enlargedPhotoUrl, setEnlargedPhotoUrl] = useState<string | null>(null)
   const [openPopupId, setOpenPopupId] = useState<string | null>(null)
   const [pendingConflict, setPendingConflict] = useState<PendingConflict | null>(null)
+
+  // Switching layout can hide groups scoped to a different layout — drop any selections made
+  // inside them so they don't keep silently contributing to the price.
+  useEffect(() => {
+    const hiddenGroupIds = new Set(
+      groups.filter((g) => g.layout_ids && g.layout_ids.length > 0 && (!selectedLayoutId || !g.layout_ids.map(String).includes(selectedLayoutId))).map((g) => g.id)
+    )
+    if (hiddenGroupIds.size === 0) return
+    setSelectedOptions((prev) => {
+      let changed = false
+      const next = { ...prev }
+      hiddenGroupIds.forEach((gid) => {
+        if (next[gid]) {
+          changed = true
+          delete next[gid]
+        }
+      })
+      return changed ? next : prev
+    })
+  }, [selectedLayoutId, groups])
 
   // Workspace branding + design
   useEffect(() => {

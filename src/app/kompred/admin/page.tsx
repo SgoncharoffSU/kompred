@@ -36,6 +36,7 @@ interface AdminGroup {
   required: string
   enlarge_photo: string
   model_ids: number[] | null
+  layout_ids: number[] | null
 }
 
 interface PopupChoice {
@@ -1205,6 +1206,7 @@ export default function AdminPage() {
   const [models, setModels] = useState<AdminModel[]>([])
   const [media, setMedia] = useState<MediaItem[]>([])
   const [groups, setGroups] = useState<AdminGroup[]>([])
+  const [layouts, setLayouts] = useState<{ id: string; name: string }[]>([])
   const [options, setOptions] = useState<AdminOption[]>([])
   const [exclusions, setExclusions] = useState<Exclusion[]>([])
   const [groupExclusionPopover, setGroupExclusionPopover] = useState<{ type: 'group'; id: string; anchorTop: number; anchorBottom: number; left: number } | null>(null)
@@ -1309,6 +1311,16 @@ export default function AdminPage() {
   useEffect(() => {
     loadAll()
   }, [])
+
+  useEffect(() => {
+    if (!selectedModelId) {
+      setLayouts([])
+      return
+    }
+    phpGet('get_layouts', { model_id: selectedModelId }).then((data) => {
+      setLayouts((data.layouts || []).map((l: any) => ({ id: String(l.id), name: l.name })))
+    })
+  }, [selectedModelId])
 
   useEffect(() => {
     fetch('/api/workspace-settings')
@@ -1586,7 +1598,7 @@ export default function AdminPage() {
     setCreatingBlock(true)
     const res = await phpPost('create_group', { name, sort_order: 0, block_type: blockType, ...(parentGroupId ? { parent_group_id: Number(parentGroupId) } : {}) })
     if (res.ok && res.id) {
-      const newGroup: AdminGroup = { id: String(res.id), name, sort_order: '0', selection_type: 'multiple', block_type: blockType, parent_group_id: parentGroupId ?? null, required: '1', enlarge_photo: '0', model_ids: null }
+      const newGroup: AdminGroup = { id: String(res.id), name, sort_order: '0', selection_type: 'multiple', block_type: blockType, parent_group_id: parentGroupId ?? null, required: '1', enlarge_photo: '0', model_ids: null, layout_ids: null }
       if (parentGroupId) {
         const reordered = [...groups.filter((g) => g.parent_group_id === parentGroupId).sort((a, b) => Number(a.sort_order) - Number(b.sort_order)), newGroup].map((g, i) => ({ ...g, sort_order: String(i) }))
         setGroups((prev) => [...prev.filter((g) => g.parent_group_id !== parentGroupId), ...reordered])
@@ -1658,6 +1670,17 @@ export default function AdminPage() {
     const normalized = next.length >= models.length ? null : next
     await phpPost('update_group_models', { id: Number(groupId), model_ids: normalized })
     setGroups((prev) => prev.map((g) => (g.id === groupId ? { ...g, model_ids: normalized } : g)))
+  }
+
+  const toggleGroupLayouts = async (groupId: string, layoutId: string) => {
+    const group = groups.find((g) => g.id === groupId)
+    if (!group) return
+    const current = group.layout_ids ?? layouts.map((l) => Number(l.id))
+    const lid = Number(layoutId)
+    const next = current.includes(lid) ? current.filter((id) => id !== lid) : [...current, lid]
+    const normalized = next.length >= layouts.length ? null : next
+    await phpPost('update_group_layouts', { id: Number(groupId), layout_ids: normalized })
+    setGroups((prev) => prev.map((g) => (g.id === groupId ? { ...g, layout_ids: normalized } : g)))
   }
 
   const duplicateGroup = async (groupId: string, name: string) => {
@@ -2033,6 +2056,20 @@ export default function AdminPage() {
                 </div>
               )}
 
+              {!isOpen && group.layout_ids && layouts.length > 1 && (
+                <div className="flex flex-wrap items-center gap-1 px-5 pb-3 pl-11">
+                  <span className="mr-1 text-[10px] text-slate-400 dark:text-[#6a5f57]">📐 Только для планировки:</span>
+                  {group.layout_ids.map((id) => {
+                    const l = layouts.find((ll) => Number(ll.id) === id)
+                    return (
+                      <span key={id} className="rounded-full border border-[#b87524]/30 bg-[#b87524]/10 px-2 py-0.5 text-[10px] font-medium text-[#b87524] dark:bg-[#b87524]/20 dark:text-[#e0a260]">
+                        {l?.name || id}
+                      </span>
+                    )
+                  })}
+                </div>
+              )}
+
               {isOpen && (
                 <div className="px-5 pb-5">
                   {children.length > 0 && <p className="mb-3 rounded-lg bg-slate-50 dark:bg-[#1f1c16] px-3 py-2 text-xs text-slate-400 dark:text-[#6a5f57]">Это блок-обёртка для вложенных блоков ниже — опции сюда не добавляются напрямую.</p>}
@@ -2053,6 +2090,28 @@ export default function AdminPage() {
                             title={active ? 'Блок показывается для этой модели — нажмите, чтобы скрыть' : 'Блок скрыт для этой модели — нажмите, чтобы показать'}
                           >
                             {m.name}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+
+                  {layouts.length > 1 && (
+                    <div className="mb-3 flex flex-wrap items-center gap-1">
+                      <span className="mr-1 text-[10px] text-slate-400 dark:text-[#6a5f57]">Планировки:</span>
+                      {layouts.map((l) => {
+                        const active = !group.layout_ids || group.layout_ids.includes(Number(l.id))
+                        return (
+                          <button
+                            key={l.id}
+                            type="button"
+                            onClick={() => toggleGroupLayouts(group.id, l.id)}
+                            className={`rounded-full border px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                              active ? 'border-[#b87524]/30 bg-[#b87524]/10 text-[#b87524]' : 'border-transparent bg-slate-100 dark:bg-[#2a2520] text-slate-400 dark:text-[#6a5f57]'
+                            }`}
+                            title={active ? 'Блок показывается для этой планировки — нажмите, чтобы скрыть' : 'Блок скрыт для этой планировки — нажмите, чтобы показать'}
+                          >
+                            {l.name}
                           </button>
                         )
                       })}
