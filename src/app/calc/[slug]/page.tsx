@@ -79,15 +79,28 @@ async function getCalculation(slug: string): Promise<OfferData | null> {
   }
 }
 
-async function getContactBlocks(account: string): Promise<ContactBlock[]> {
+type WorkspaceInfo = {
+  contactBlocks: ContactBlock[]
+  workspaceName: string
+  logoLightUrl: string
+  logoDarkUrl: string
+}
+
+async function getWorkspaceInfo(account: string): Promise<WorkspaceInfo> {
+  const empty: WorkspaceInfo = { contactBlocks: [], workspaceName: '', logoLightUrl: '', logoDarkUrl: '' }
   const siteUrl = process.env.SITE_URL || 'http://127.0.0.1:8016'
   try {
     const res = await fetch(`${siteUrl}/api/workspace-lookup?account=${encodeURIComponent(account)}`, { cache: 'no-store' })
-    if (!res.ok) return []
+    if (!res.ok) return empty
     const data = await res.json()
-    return Array.isArray(data.contact_blocks) ? data.contact_blocks : []
+    return {
+      contactBlocks: Array.isArray(data.contact_blocks) ? data.contact_blocks : [],
+      workspaceName: data.workspace_name || '',
+      logoLightUrl: normalizeUrl(data.logo_light_url || ''),
+      logoDarkUrl: normalizeUrl(data.logo_dark_url || ''),
+    }
   } catch {
-    return []
+    return empty
   }
 }
 
@@ -112,8 +125,10 @@ function formatDate(dateStr: string) {
 
 export default async function OfferPage({ params }: { params: { slug: string } }) {
   const offer = await getCalculation(params.slug)
-  const contactBlocks = offer?.account ? await getContactBlocks(offer.account) : []
+  const workspaceInfo = offer?.account ? await getWorkspaceInfo(offer.account) : { contactBlocks: [], workspaceName: '', logoLightUrl: '', logoDarkUrl: '' }
+  const { contactBlocks, workspaceName, logoLightUrl, logoDarkUrl } = workspaceInfo
   const hasContactInfo = contactBlocks.some((b) => b.data.phone || b.data.email || b.data.address || b.data.telegram || b.data.whatsapp)
+  const headerPhone = contactBlocks.find((b) => b.data.phone)?.data.phone
   const editUrl = offer?.account ? `/cli${offer.account}${offer.model_id ? `?model=${offer.model_id}` : ''}` : null
 
   if (!offer) {
@@ -137,11 +152,26 @@ export default async function OfferPage({ params }: { params: { slug: string } }
       <div className="mx-auto max-w-2xl space-y-4">
 
         {/* Brand mark */}
-        <div className="mb-2 flex items-center gap-2 px-1">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#0d5a52] text-base">
-            🛁
+        <div className="mb-2 flex items-center justify-between gap-2 px-1">
+          <div className="flex items-center gap-2">
+            {logoLightUrl || logoDarkUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={logoLightUrl || logoDarkUrl} alt={workspaceName || 'Логотип'} className="h-8 w-auto" />
+            ) : (
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#0d5a52] text-base">
+                🛁
+              </div>
+            )}
+            <span className="text-sm font-bold text-[#1a1612]">{workspaceName || 'СК СИБЕРИЯ'}</span>
           </div>
-          <span className="text-sm font-bold text-[#1a1612]">СК СИБЕРИЯ</span>
+          {headerPhone && (
+            <a href={`tel:${headerPhone.replace(/\s/g, '')}`} className="flex items-center gap-1.5 text-sm font-semibold text-[#0d5a52]">
+              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24" aria-hidden>
+                <path d="M22 16.92v3a2 2 0 01-2.18 2A19.79 19.79 0 0111.39 19a19.5 19.5 0 01-6-6A19.79 19.79 0 012.12 4.18 2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z" />
+              </svg>
+              {headerPhone}
+            </a>
+          )}
         </div>
 
         {/* Hero photo */}
