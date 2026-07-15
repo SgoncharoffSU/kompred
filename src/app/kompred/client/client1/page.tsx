@@ -1277,7 +1277,7 @@ function ClassicDesign(props: DesignProps) {
                     optionsHeaderShown++
                     const rowGroups = row.groups
                     const hasContent = rowGroups.some((g) => {
-                      const opts = optionsByGroup[g.id] || []
+                      const opts = (optionsByGroup[g.id] || []).filter((o) => !hiddenOptionIds.has(o.id))
                       const hasChildren = groups.some((c) => c.parent_group_id === g.id)
                       return opts.length > 0 || hasChildren
                     })
