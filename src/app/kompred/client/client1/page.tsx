@@ -372,6 +372,13 @@ const exclusionService = {
   },
 }
 
+const visibilityRuleService = {
+  async getVisibilityRules(): Promise<VisibilityRule[]> {
+    const data = await getBootstrap()
+    return (data.visibility_rules || []).map(adaptVisibilityRule)
+  },
+}
+
 const calculationService = {
   async createCalculation(payload: {
     model_id: string
