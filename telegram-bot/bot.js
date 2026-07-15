@@ -8,8 +8,7 @@ if (!TOKEN) {
   process.exit(1)
 }
 if (!MANAGER_GROUP_CHAT_ID) {
-  console.error('MANAGER_GROUP_CHAT_ID env var not set')
-  process.exit(1)
+  console.warn('MANAGER_GROUP_CHAT_ID not set yet — running in discovery mode: logging chat ids for any message received so the manager group id can be found in the logs.')
 }
 
 const bot = new TelegramBot(TOKEN, { polling: true })
