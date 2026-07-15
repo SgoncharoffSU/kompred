@@ -32,7 +32,11 @@ bot.onText(/^\/start\b/, (msg) => {
 })
 
 bot.on('message', (msg) => {
+  if (!MANAGER_GROUP_CHAT_ID) {
+    console.log(`[discovery] chat.id=${msg.chat.id} type=${msg.chat.type} title=${msg.chat.title || ''} text=${msg.text || ''}`)
+  }
   if (!msg.text || msg.text.startsWith('/start')) return
+  if (!MANAGER_GROUP_CHAT_ID) return
 
   if (msg.chat.type === 'private') {
     // Client -> forward to the manager group with the client's chat id embedded.
