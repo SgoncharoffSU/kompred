@@ -1849,6 +1849,7 @@ export default function ClientPage() {
   const [dimensions, setDimensions] = useState<Record<string, { length: number; width: number }>>({})
   const [selectedOptionChoices, setSelectedOptionChoices] = useState<Record<string, PopupChoice>>({})
   const [exclusions, setExclusions] = useState<Exclusion[]>([])
+  const [visibilityRules, setVisibilityRules] = useState<VisibilityRule[]>([])
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
