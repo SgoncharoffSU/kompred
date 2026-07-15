@@ -75,6 +75,15 @@ interface Exclusion {
   b_id: number
 }
 
+interface VisibilityRule {
+  id: string
+  trigger_type: 'option' | 'group'
+  trigger_id: number
+  target_type: 'option' | 'group'
+  target_id: number
+  effect: 'show' | 'hide'
+}
+
 interface MediaItem {
   id: number
   file_url: string
@@ -1198,6 +1207,175 @@ function GroupExclusionPopover({
   )
 }
 
+// ── Visibility-rule pickers ──────────────────────────────────────────────────
+// "When this option/block is selected, hide/show that other option/block" — distinct from
+// exclusions (which grey out an incompatible option but keep it visible), this actually
+// removes the target from view entirely.
+
+type VisibilityEffect = 'show' | 'hide'
+
+function VisibilityChecklist({
+  triggerSelf,
+  allItems,
+  effectFor,
+  onSetEffect,
+}: {
+  triggerSelf: ExclusionItem
+  allItems: ExclusionItem[]
+  effectFor: (type: 'option' | 'group', id: string) => VisibilityEffect | null
+  onSetEffect: (type: 'option' | 'group', id: string, effect: VisibilityEffect | null) => void
+}) {
+  const [query, setQuery] = useState('')
+  const items = allItems.filter((it) => (it.type !== triggerSelf.type || it.id !== triggerSelf.id) && !(triggerSelf.type === 'group' && it.type === 'option' && it.groupId === triggerSelf.id))
+  const activeItems = items.filter((it) => effectFor(it.type, it.id) !== null)
+  const q = query.trim().toLowerCase()
+  const filtered = q ? items.filter((it) => it.name.toLowerCase().includes(q) || (it.groupName || '').toLowerCase().includes(q)) : items
+  const groups = filtered.filter((it) => it.type === 'group')
+  const options = filtered.filter((it) => it.type === 'option')
+
+  const row = (it: ExclusionItem) => {
+    const effect = effectFor(it.type, it.id)
+    return (
+      <div key={`${it.type}:${it.id}`} className="flex items-center gap-2 rounded px-1 py-1 text-xs hover:bg-slate-50 dark:hover:bg-[#2a2520]">
+        <span className="flex-1 truncate text-slate-700 dark:text-[#d5cfc7]">
+          {it.name}
+          {it.type === 'option' && it.groupName && <span className="text-slate-400 dark:text-[#6a5f57]"> · {it.groupName}</span>}
+        </span>
+        <button
+          type="button"
+          onClick={() => onSetEffect(it.type, it.id, effect === 'hide' ? null : 'hide')}
+          className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${effect === 'hide' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'text-slate-400 hover:bg-slate-100 dark:text-[#6a5f57] dark:hover:bg-[#2e2820]'}`}
+          title="Скрывать при выборе триггера"
+        >
+          🙈 скрыть
+        </button>
+        <button
+          type="button"
+          onClick={() => onSetEffect(it.type, it.id, effect === 'show' ? null : 'show')}
+          className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${effect === 'show' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'text-slate-400 hover:bg-slate-100 dark:text-[#6a5f57] dark:hover:bg-[#2e2820]'}`}
+          title="Показывать только при выборе триггера (скрыто по умолчанию)"
+        >
+          👁 показать
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      {activeItems.length > 0 ? (
+        <div className="mb-2 flex flex-wrap gap-1.5">
+          {activeItems.map((it) => {
+            const effect = effectFor(it.type, it.id)
+            return (
+              <span
+                key={`${it.type}:${it.id}`}
+                className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] ${
+                  effect === 'hide'
+                    ? 'border-red-200 bg-red-50 text-red-700 dark:border-red-800/50 dark:bg-red-900/20 dark:text-red-400'
+                    : 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800/50 dark:bg-emerald-900/20 dark:text-emerald-400'
+                }`}
+              >
+                {effect === 'hide' ? '🙈' : '👁'} {it.name}
+                <button type="button" onClick={() => onSetEffect(it.type, it.id, null)} className="opacity-70 hover:opacity-100" title="Убрать правило">
+                  ✕
+                </button>
+              </span>
+            )
+          })}
+        </div>
+      ) : (
+        <div className="mb-2 text-xs text-slate-400 dark:text-[#6a5f57]">Пока нет правил видимости</div>
+      )}
+      <input
+        type="text"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Найти блок или опцию…"
+        className="w-full rounded border border-slate-200 dark:border-[#3a312a] bg-white dark:bg-[#1f1c16] px-2 py-1 text-xs focus:border-sky-400 focus:outline-none"
+      />
+      {groups.length === 0 && options.length === 0 ? (
+        <div className="px-1 py-1.5 text-xs text-slate-400 dark:text-[#6a5f57]">Ничего не найдено</div>
+      ) : (
+        <>
+          {groups.length > 0 && (
+            <>
+              <div className="px-1 pb-0.5 pt-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-[#6a5f57]">Блоки</div>
+              {groups.map(row)}
+            </>
+          )}
+          {options.length > 0 && (
+            <>
+              <div className="px-1 pb-0.5 pt-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-[#6a5f57]">Опции</div>
+              {options.map(row)}
+            </>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+function OptionVisibilityPopover({
+  option,
+  anchorTop,
+  anchorBottom,
+  left,
+  allItems,
+  effectFor,
+  onSetEffect,
+  onClose,
+}: {
+  option: { id: string; name: string }
+  anchorTop: number
+  anchorBottom: number
+  left: number
+  allItems: ExclusionItem[]
+  effectFor: (t: 'option' | 'group', id: string) => VisibilityEffect | null
+  onSetEffect: (t: 'option' | 'group', id: string, effect: VisibilityEffect | null) => void
+  onClose: () => void
+}) {
+  return (
+    <ExclusionPopover anchorTop={anchorTop} anchorBottom={anchorBottom} left={left} width={300} onClose={onClose}>
+      <div className="mb-1 text-[11px] font-semibold text-slate-500 dark:text-[#9a8f87]">При выборе опции «{option.name}»…</div>
+      <VisibilityChecklist triggerSelf={{ type: 'option', id: option.id, name: option.name }} allItems={allItems} effectFor={effectFor} onSetEffect={onSetEffect} />
+      <button onClick={onClose} className="mt-2 w-full rounded border border-slate-200 dark:border-[#3a312a] py-1 text-[11px] text-slate-500 dark:text-[#9a8f87]">
+        Готово
+      </button>
+    </ExclusionPopover>
+  )
+}
+
+function GroupVisibilityPopover({
+  group,
+  anchorTop,
+  anchorBottom,
+  left,
+  allItems,
+  effectFor,
+  onSetEffect,
+  onClose,
+}: {
+  group: { id: string; name: string }
+  anchorTop: number
+  anchorBottom: number
+  left: number
+  allItems: ExclusionItem[]
+  effectFor: (t: 'option' | 'group', id: string) => VisibilityEffect | null
+  onSetEffect: (t: 'option' | 'group', id: string, effect: VisibilityEffect | null) => void
+  onClose: () => void
+}) {
+  return (
+    <ExclusionPopover anchorTop={anchorTop} anchorBottom={anchorBottom} left={left} width={300} onClose={onClose}>
+      <div className="mb-1.5 text-[11px] font-semibold text-slate-500 dark:text-[#9a8f87]">При выборе блока «{group.name}»…</div>
+      <VisibilityChecklist triggerSelf={{ type: 'group', id: group.id, name: group.name }} allItems={allItems} effectFor={effectFor} onSetEffect={onSetEffect} />
+      <button onClick={onClose} className="mt-2 w-full rounded border border-slate-200 dark:border-[#3a312a] py-1 text-[11px] text-slate-500 dark:text-[#9a8f87]">
+        Готово
+      </button>
+    </ExclusionPopover>
+  )
+}
+
 const DESIGN_COLORS: Record<string, string> = { classic: '#0d5a52', modern: '#4f46e5', minimal: '#111111' }
 
 // ── Main admin page ──────────────────────────────────────────────────────────
@@ -1211,6 +1389,9 @@ export default function AdminPage() {
   const [exclusions, setExclusions] = useState<Exclusion[]>([])
   const [groupExclusionPopover, setGroupExclusionPopover] = useState<{ type: 'group'; id: string; anchorTop: number; anchorBottom: number; left: number } | null>(null)
   const [optionExclusionPopover, setOptionExclusionPopover] = useState<{ id: string; anchorTop: number; anchorBottom: number; left: number } | null>(null)
+  const [visibilityRules, setVisibilityRules] = useState<VisibilityRule[]>([])
+  const [groupVisibilityPopover, setGroupVisibilityPopover] = useState<{ type: 'group'; id: string; anchorTop: number; anchorBottom: number; left: number } | null>(null)
+  const [optionVisibilityPopover, setOptionVisibilityPopover] = useState<{ id: string; anchorTop: number; anchorBottom: number; left: number } | null>(null)
   const [selectedModelId, setSelectedModelId] = useState('')
   const [loading, setLoading] = useState(true)
   const [savingModel, setSavingModel] = useState(false)

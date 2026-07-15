@@ -1579,7 +1579,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'get_calculation') {
                 $width = max(0, intval(isset($dim['width']) ? $dim['width'] : 0));
                 $row['length'] = $length;
                 $row['width'] = $width;
-                $row['line_total'] = floatval($row['base_price']) + floatval($row['price']) * $length * $width + $choice_price;
+                // An option might only use ONE axis (e.g. length-only, no width slider) — a
+                // missing/0 axis means "not applicable", not "zero it out", so it must default
+                // to 1, not 0, or the whole line total collapses to just the base price.
+                $line_length = $length > 0 ? $length : 1;
+                $line_width = $width > 0 ? $width : 1;
+                $row['line_total'] = floatval($row['base_price']) + floatval($row['price']) * $line_length * $line_width + $choice_price;
             } else {
                 $row['line_total'] = floatval($row['base_price']) + floatval($row['price']) * $qty + $choice_price;
             }

@@ -1569,7 +1569,7 @@ function ClassicDesign(props: DesignProps) {
                                       const qty = quantities[o.id] ?? 1
                                       const choicePrice = selectedOptionChoices[o.id]?.price ?? 0
                                       const line = isDimension
-                                        ? o.base_price + o.price_modifier * (dim?.length ?? 0) * (dim?.width ?? 0) + choicePrice
+                                        ? o.base_price + o.price_modifier * (dim?.length || 1) * (dim?.width || 1) + choicePrice
                                         : o.base_price + o.price_modifier * qty + choicePrice
                                       const choiceName = selectedOptionChoices[o.id]?.name
                                       return (
@@ -1967,7 +1967,9 @@ export default function ClientPage() {
       const isDimension = o.max_length > 0 || o.max_width > 0
       if (isDimension) {
         const dim = dimensions[o.id]
-        return sum + o.base_price + o.price_modifier * (dim?.length ?? 0) * (dim?.width ?? 0) + choicePrice
+        // An option might only use ONE axis (e.g. length-only, no width slider) — a missing/0
+        // axis means "not applicable", not "zero it out", so it must default to 1, not 0.
+        return sum + o.base_price + o.price_modifier * (dim?.length || 1) * (dim?.width || 1) + choicePrice
       }
       return sum + o.base_price + o.price_modifier * (quantities[o.id] ?? 1) + choicePrice
     }, 0)
