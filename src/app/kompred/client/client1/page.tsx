@@ -531,7 +531,7 @@ function WorkspaceLogo({
     )
   }
 
-  const imgClassName = isLarge ? 'h-12 md:h-20 lg:h-28 w-auto rounded-md' : 'h-10 w-auto'
+  const imgClassName = isLarge ? 'h-28 w-auto rounded-md' : 'h-10 w-auto'
   const imgStyle = { maxWidth: isLarge ? 280 : 140, objectFit: 'contain' as const }
 
   return (
@@ -1043,7 +1043,7 @@ function ClassicDesign(props: DesignProps) {
           <div className="absolute left-4 top-full z-50 flex -translate-y-1/2 items-center gap-3 md:left-8">
             <WorkspaceLogo logoLightUrl={logoLightUrl} logoDarkUrl={logoDarkUrl} workspaceName={workspaceName} size="lg" />
             <span
-              className={`${brandFont.className} whitespace-nowrap text-xl leading-none tracking-wide text-[#0d5a52] drop-shadow-[0_1px_2px_rgba(255,255,255,0.6)] dark:text-[#5fcabf] dark:drop-shadow-[0_1px_3px_rgba(0,0,0,0.5)] md:text-3xl lg:text-5xl`}
+              className={`${brandFont.className} text-4xl leading-none tracking-wide text-[#0d5a52] drop-shadow-[0_1px_2px_rgba(255,255,255,0.6)] dark:text-[#5fcabf] dark:drop-shadow-[0_1px_3px_rgba(0,0,0,0.5)] md:text-5xl`}
             >
               СК СИБЕРИЯ
             </span>
@@ -1051,7 +1051,9 @@ function ClassicDesign(props: DesignProps) {
         </header>
 
         <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
-          <div className="lg:hidden sticky top-0 z-0 [&>div]:rounded-none [&>div]:shadow-none [&_.aspect-square]:!aspect-auto [&_.aspect-square]:!h-[62vh]">{photoBlock}</div>
+          {/* top-16 (not top-0) leaves a permanent gap below the header so the logo — which
+              hangs ~56px below the header by design — never covers the photo underneath it. */}
+          <div className="lg:hidden sticky top-16 z-0 [&>div]:rounded-none [&>div]:shadow-none [&_.aspect-square]:!aspect-auto [&_.aspect-square]:!h-[62vh]">{photoBlock}</div>
 
           <div className="relative z-10 mx-auto max-w-[1280px] px-4 pb-6 pt-16 md:px-8 md:pb-10 md:pt-20 lg:h-full lg:flex lg:flex-col lg:pt-10">
             <div className="bg-[#f2ece4] dark:bg-[#1c1a16] lg:flex lg:flex-1 lg:flex-col lg:min-h-0">

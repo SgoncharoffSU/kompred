@@ -1,7 +1,10 @@
 ﻿import type { ReactNode } from 'react'
+import { Yeseva_One } from 'next/font/google'
 import { PrintButton } from './print-button'
 import { ShareButton } from './share-button'
 import { ZoomableImage } from './zoomable-image'
+
+const brandFont = Yeseva_One({ subsets: ['cyrillic', 'latin'], weight: '400', display: 'swap' })
 
 // This becomes an <img src> the visitor's own browser fetches directly, so it must resolve
 // against the public site (nginx serves /uploads/ on the main domain) — never the internal
@@ -162,7 +165,7 @@ export default async function OfferPage({ params }: { params: { slug: string } }
                 🛁
               </div>
             )}
-            <span className="text-sm font-bold text-[#1a1612]">{workspaceName || 'СК СИБЕРИЯ'}</span>
+            <span className={`${brandFont.className} text-xl leading-none tracking-wide text-[#0d5a52]`}>{workspaceName || 'СК СИБЕРИЯ'}</span>
           </div>
           {headerPhone && (
             <a href={`tel:${headerPhone.replace(/\s/g, '')}`} className="flex items-center gap-1.5 text-sm font-semibold text-[#0d5a52]">
