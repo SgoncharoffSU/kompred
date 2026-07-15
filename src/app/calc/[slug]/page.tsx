@@ -1,5 +1,6 @@
 ﻿import type { ReactNode } from 'react'
 import { Yeseva_One } from 'next/font/google'
+import { InclusionToggle } from './inclusion-toggle'
 import { PrintButton } from './print-button'
 import { ShareButton } from './share-button'
 import { ZoomableImage } from './zoomable-image'
