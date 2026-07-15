@@ -1292,7 +1292,7 @@ function ClassicDesign(props: DesignProps) {
                         )}
                         <div className="divide-y divide-[#e0d5c9] dark:divide-[#38322a]">
                           {rowGroups.map((group) => {
-                            const options = optionsByGroup[group.id] || []
+                            const options = (optionsByGroup[group.id] || []).filter((o) => !hiddenOptionIds.has(o.id))
                             const hasImages = options.some((o) => o.image_url)
                             const isParent = groups.some((c) => c.parent_group_id === group.id)
                             const isChild = !!group.parent_group_id
