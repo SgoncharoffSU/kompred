@@ -2222,6 +2222,35 @@ export default function AdminPage() {
                     />
                   )}
                 </div>
+                <div className="relative">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      if (visibilityOpen) {
+                        setGroupVisibilityPopover(null)
+                        return
+                      }
+                      const rect = e.currentTarget.getBoundingClientRect()
+                      setGroupVisibilityPopover({ type: 'group', id: group.id, anchorTop: rect.top, anchorBottom: rect.bottom, left: rect.right - 300 })
+                    }}
+                    className={`mr-1 rounded-lg px-1.5 py-0.5 text-xs hover:bg-slate-100 dark:hover:bg-[#2a2520] ${visibilityCount > 0 ? 'text-sky-600' : 'text-slate-300 dark:text-[#4a4038]'}`}
+                    title="Показ/скрытие других блоков и опций при выборе этого блока"
+                  >
+                    👁 вид.{visibilityCount > 0 ? ` ${visibilityCount}` : ''}
+                  </button>
+                  {visibilityOpen && groupVisibilityPopover && (
+                    <GroupVisibilityPopover
+                      group={group}
+                      anchorTop={groupVisibilityPopover.anchorTop}
+                      anchorBottom={groupVisibilityPopover.anchorBottom}
+                      left={groupVisibilityPopover.left}
+                      allItems={allExclusionItems}
+                      effectFor={(t, id) => visibilityEffectFor('group', group.id, t, id)}
+                      onSetEffect={(t, id, effect) => setVisibilityEffect('group', group.id, t, id, effect)}
+                      onClose={() => setGroupVisibilityPopover(null)}
+                    />
+                  )}
+                </div>
                 {children.length === 0 && (
                   <button
                     onClick={(e) => {
