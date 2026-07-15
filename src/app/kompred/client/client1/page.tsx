@@ -2079,6 +2079,26 @@ export default function ClientPage() {
     return { hiddenGroupIds: gIds, hiddenOptionIds: oIds }
   }, [visibilityRules, selectedOptionIds, optionsByGroup, groups])
 
+  // Selecting a trigger option/block can hide other options/blocks — drop any selections made
+  // inside them so a now-invisible option can't keep silently contributing to the price.
+  useEffect(() => {
+    if (hiddenGroupIds.size === 0 && hiddenOptionIds.size === 0) return
+    setSelectedOptions((prev) => {
+      let changed = false
+      const next: Record<string, string[]> = {}
+      Object.entries(prev).forEach(([groupId, optionIds]) => {
+        if (hiddenGroupIds.has(groupId)) {
+          changed = true
+          return
+        }
+        const kept = optionIds.filter((id) => !hiddenOptionIds.has(id))
+        if (kept.length !== optionIds.length) changed = true
+        next[groupId] = kept
+      })
+      return changed ? next : prev
+    })
+  }, [hiddenGroupIds, hiddenOptionIds])
+
   const reasonPhrasesFor = (rules: { ruleKind: 'option' | 'group'; selectedOptionId: string; ruleGroupName: string }[]) => {
     const seen = new Set<string>()
     const phrases: string[] = []
