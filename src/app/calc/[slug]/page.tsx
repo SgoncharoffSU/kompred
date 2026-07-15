@@ -237,29 +237,8 @@ export default async function OfferPage({ params }: { params: { slug: string } }
           </div>
         </div>
 
-        {/* Base package inclusions — screen only, excluded from the printed PDF */}
-        {inclusionSections.length > 0 && (
-          <div className="print:hidden overflow-hidden rounded-2xl border border-[#e0d5c9] bg-white shadow-card">
-            <div className="border-b border-[#e0d5c9] px-6 py-3.5">
-              <span className="text-xs font-semibold uppercase tracking-widest text-[#7a6f66]">Что входит в базовую стоимость</span>
-            </div>
-            <div className="divide-y divide-[#e0d5c9]">
-              {inclusionSections.map((section) => (
-                <div key={section.id} className="px-6 py-4">
-                  <div className="text-sm font-semibold text-[#1a1612]">{section.name}</div>
-                  <ul className="mt-2 space-y-1.5">
-                    {section.items.map((item, i) => (
-                      <li key={i} className="flex items-start gap-2 text-sm text-[#7a6f66]">
-                        <span className="mt-1 h-1 w-1 shrink-0 rounded-full bg-[#0d5a52]" />
-                        {item}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        {/* Base package inclusions — collapsed by default, screen only (excluded from print/PDF) */}
+        {inclusionSections.length > 0 && <InclusionToggle sections={inclusionSections} />}
 
         {/* Options list */}
         {offer.selected_options.length > 0 && (
