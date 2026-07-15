@@ -199,6 +199,17 @@ function adaptExclusion(e: any): Exclusion {
   return { id: String(e.id), a_type: e.a_type, a_id: String(e.a_id), b_type: e.b_type, b_id: String(e.b_id) }
 }
 
+function adaptVisibilityRule(r: any): VisibilityRule {
+  return {
+    id: String(r.id),
+    trigger_type: r.trigger_type,
+    trigger_id: String(r.trigger_id),
+    target_type: r.target_type,
+    target_id: String(r.target_id),
+    effect: r.effect === 'show' ? 'show' : 'hide',
+  }
+}
+
 function adaptOption(raw: any, modelId?: string): ClientOption {
   const photoOverride = modelId ? raw.model_photos?.[modelId] : undefined
   const imageUrl = photoOverride?.image_url ?? raw.image_url ?? ''
