@@ -1482,6 +1482,7 @@ export default function AdminPage() {
       setGroups(groupList)
       setOptions(data.options || [])
       setExclusions(data.exclusions || [])
+      setVisibilityRules(data.visibility_rules || [])
       const next = selectId || selectedModelId || modelList[0]?.id || ''
       setSelectedModelId(next)
     } finally {
