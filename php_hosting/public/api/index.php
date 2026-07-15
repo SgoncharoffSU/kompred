@@ -229,6 +229,17 @@ $db->query("CREATE TABLE IF NOT EXISTS exclusion_rules (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uniq_pair (a_type,a_id,b_type,b_id)
 )");
+$db->query("CREATE TABLE IF NOT EXISTS visibility_rules (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    trigger_type ENUM('group','option') NOT NULL,
+    trigger_id INT NOT NULL,
+    target_type ENUM('group','option') NOT NULL,
+    target_id INT NOT NULL,
+    effect ENUM('show','hide') NOT NULL DEFAULT 'hide',
+    workspace_id INT NULL DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_rule (trigger_type,trigger_id,target_type,target_id)
+)");
 $db->query("CREATE TABLE IF NOT EXISTS layouts (
     id INT AUTO_INCREMENT PRIMARY KEY,
     model_id INT NOT NULL,
