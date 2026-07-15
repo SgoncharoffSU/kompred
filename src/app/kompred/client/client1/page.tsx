@@ -1009,7 +1009,7 @@ function ClassicDesign(props: DesignProps) {
           </div>
           <div className="absolute left-4 top-full z-50 flex -translate-y-1/2 items-center gap-3 md:left-8">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo-siberia.svg" alt={workspaceName || 'СК Сибирия'} className="h-28 w-auto drop-shadow-[0_1px_3px_rgba(255,255,255,0.5)]" />
+            <img src="/logo-siberia.svg" alt={workspaceName || 'СК Сибирия'} className="h-20 w-auto drop-shadow-[0_1px_3px_rgba(255,255,255,0.5)]" />
             <span
               className={`${brandFont.className} text-4xl leading-none tracking-wide text-[#0d5a52] drop-shadow-[0_1px_2px_rgba(255,255,255,0.6)] dark:text-[#5fcabf] dark:drop-shadow-[0_1px_3px_rgba(0,0,0,0.5)] md:text-5xl`}
             >
