@@ -160,6 +160,12 @@ function normalizeImageUrl(url: string): string {
 
 const fmt = (n: number) => new Intl.NumberFormat('ru-RU').format(n)
 
+// Custom admin domains (no /admin{N} path) resolve their account by hostname instead.
+const HOSTNAME_ACCOUNT_MAP: Record<string, string> = {
+  'siberiaa.ru': '1238',
+  'www.siberiaa.ru': '1238',
+}
+
 async function phpGet(action: string, params: Record<string, string> = {}): Promise<any> {
   const sp = new URLSearchParams({ action, ...params })
   return fetch(`/api/php-proxy?${sp}`, { cache: 'no-store' }).then((r) => r.json())
@@ -1532,6 +1538,7 @@ export default function AdminPage() {
       })
     const match = window.location.pathname.match(/\/admin(\d+)/)
     if (match) setAccountNum(match[1])
+    else if (HOSTNAME_ACCOUNT_MAP[window.location.hostname]) setAccountNum(HOSTNAME_ACCOUNT_MAP[window.location.hostname])
   }, [])
 
   const uploadLogo = async (side: 'light' | 'dark', file: File) => {

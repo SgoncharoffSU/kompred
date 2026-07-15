@@ -236,14 +236,26 @@ function adaptOption(raw: any, modelId?: string): ClientOption {
 
 // ── Workspace-scoped PHP client ─────────────────────────────────────────────
 
+// Custom client domains (no /cli{N} path) resolve their account by hostname instead.
+const HOSTNAME_ACCOUNT_MAP: Record<string, string> = {
+  'siberiaa.ru': '1238',
+  'www.siberiaa.ru': '1238',
+}
+
+function getAccountFromLocation(): string | null {
+  const pathMatch = window.location.pathname.match(/\/cli(\d+)/)
+  if (pathMatch) return pathMatch[1]
+  return HOSTNAME_ACCOUNT_MAP[window.location.hostname] || null
+}
+
 let cachedPhpWorkspaceId: string | null | undefined
 
 async function resolvePhpWorkspaceId(): Promise<string | null> {
   if (cachedPhpWorkspaceId !== undefined) return cachedPhpWorkspaceId
-  const match = window.location.pathname.match(/\/cli(\d+)/)
-  if (!match) return (cachedPhpWorkspaceId = null)
+  const account = getAccountFromLocation()
+  if (!account) return (cachedPhpWorkspaceId = null)
   try {
-    const res = await fetch(`/api/workspace-lookup?account=${match[1]}`)
+    const res = await fetch(`/api/workspace-lookup?account=${account}`)
     const data = await res.json()
     cachedPhpWorkspaceId = data.php_workspace_id ? String(data.php_workspace_id) : null
   } catch {
@@ -1842,10 +1854,10 @@ export default function ClientPage() {
 
   // Workspace branding + design
   useEffect(() => {
-    const match = window.location.pathname.match(/\/cli(\d+)/)
-    if (!match) return
+    const account = getAccountFromLocation()
+    if (!account) return
     const designOverride = new URLSearchParams(window.location.search).get('design')
-    fetch(`/api/workspace-lookup?account=${match[1]}`)
+    fetch(`/api/workspace-lookup?account=${account}`)
       .then((r) => r.json())
       .then((data) => {
         if (designOverride && ['classic', 'modern', 'minimal'].includes(designOverride)) setClientDesign(designOverride as any)
@@ -2239,7 +2251,7 @@ export default function ClientPage() {
         const dim = dimensions[id]
         if (dim && (dim.length > 0 || dim.width > 0)) optionDimensions[id] = dim
       }
-      const match = window.location.pathname.match(/\/cli(\d+)/)
+      const account = getAccountFromLocation()
       const result = await calculationService.createCalculation({
         model_id: selectedModelId,
         layout_id: selectedLayoutId || '0',
@@ -2247,7 +2259,7 @@ export default function ClientPage() {
         total_price: totalPrice,
         option_choices: Object.keys(optionChoices).length > 0 ? optionChoices : undefined,
         option_dimensions: Object.keys(optionDimensions).length > 0 ? optionDimensions : undefined,
-        account: match ? match[1] : undefined,
+        account: account || undefined,
       })
       setOfferLink(`${window.location.origin}/calc/${result.public_slug}`)
     } catch {
