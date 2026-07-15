@@ -1924,6 +1924,11 @@ export default function ClientPage() {
     exclusionService.getExclusions().then(setExclusions).catch(() => {})
   }, [])
 
+  // Visibility rules ("when X is selected, show/hide Y")
+  useEffect(() => {
+    visibilityRuleService.getVisibilityRules().then(setVisibilityRules).catch(() => {})
+  }, [])
+
   // Layouts + groups + options for selected model
   useEffect(() => {
     if (!selectedModelId) return
