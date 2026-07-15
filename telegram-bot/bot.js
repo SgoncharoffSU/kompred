@@ -58,10 +58,9 @@ bot.on('message', (msg) => {
   }
 })
 
+const util = require('util')
 bot.on('polling_error', (err) => {
-  console.error('polling_error', err.message)
-  if (err.errors) console.error('nested errors:', JSON.stringify(err.errors, Object.getOwnPropertyNames(err.errors[0] || {})))
-  console.error(err.stack)
+  console.error('polling_error FULL:', util.inspect(err, { depth: 6, showHidden: false }))
 })
 
 console.log('Telegram bot started (long polling)')
