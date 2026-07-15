@@ -12,7 +12,9 @@ if (!MANAGER_GROUP_CHAT_ID) {
   console.warn('MANAGER_GROUP_CHAT_ID not set yet — running in discovery mode: logging chat ids for any message received so the manager group id can be found in the logs.')
 }
 
-const bot = new TelegramBot(TOKEN, { polling: true })
+// This VPS has no working outbound IPv6 route ("Network is unreachable"), but the underlying
+// request library tries it first and hangs — force IPv4 via agentOptions.
+const bot = new TelegramBot(TOKEN, { polling: true, request: { agentOptions: { family: 4 } } })
 
 const WELCOME_TEXT = 'Здравствуйте! Напишите ваш вопрос, и менеджер ответит вам здесь в ближайшее время.'
 
