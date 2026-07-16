@@ -2869,8 +2869,17 @@ export default function AdminPage() {
       { key: 'whatsapp', label: 'WhatsApp', placeholder: '+7 999 123-45-67', prefix: '💬' },
       { key: 'email', label: 'Email', placeholder: 'info@example.com', prefix: '✉️' },
       { key: 'address', label: 'Адрес', placeholder: 'г. Москва, ул. Пример, 1', prefix: '📍' },
+      { key: 'requisites', label: 'Реквизиты', placeholder: 'ИНН, ОГРН, р/с…', prefix: '🏢' },
       { key: 'note', label: 'Доп. текст', placeholder: 'Режим работы, описание…', prefix: '📄' },
     ]
+    const emails = data.emails || []
+    const draft = newEmailDraft[group.id] || { label: '', email: '' }
+    const saveEmails = async (nextEmails: { label: string; email: string }[]) => {
+      const nextData = { ...data, emails: nextEmails }
+      const next = contactBlocks.some((b) => b.id === group.id) ? contactBlocks.map((b) => (b.id === group.id ? { ...b, data: nextData } : b)) : [...contactBlocks, { id: group.id, title: group.name, data: nextData }]
+      setContactBlocks(next)
+      await saveContactBlocks(next)
+    }
     return (
       <div className="mb-3 rounded-xl border border-slate-100 dark:border-[#2e2820] overflow-hidden">
         <div className="divide-y divide-slate-100 dark:divide-[#2e2820]">
@@ -2881,6 +2890,48 @@ export default function AdminPage() {
               <input defaultValue={data[f.key] || ''} placeholder={f.placeholder} onBlur={(e) => saveField(f.key, e.target.value.trim())} className="flex-1 rounded-lg border border-slate-200 dark:border-[#3a312a] bg-white dark:bg-[#252119] px-2.5 py-1.5 text-xs text-slate-700 dark:text-[#d5cfc7] placeholder-slate-300 dark:placeholder-[#5a5048] focus:border-[#0d5a52] focus:outline-none" />
             </div>
           ))}
+          <div className="px-4 py-2.5">
+            <div className="mb-2 flex items-center gap-3">
+              <span className="w-5 shrink-0 text-center text-sm">📧</span>
+              <label className="text-xs font-medium text-slate-500 dark:text-[#9a8f87]">Доп. email по темам (Закупки, Поддержка…)</label>
+            </div>
+            <div className="ml-8 space-y-1.5">
+              {emails.map((e, i) => (
+                <div key={i} className="flex items-center gap-2 text-xs">
+                  <span className="flex-1 truncate text-slate-600 dark:text-[#d5cfc7]">
+                    <b>{e.label}:</b> {e.email}
+                  </span>
+                  <button onClick={() => saveEmails(emails.filter((_, idx) => idx !== i))} className="text-slate-400 hover:text-red-500">
+                    ✕
+                  </button>
+                </div>
+              ))}
+              <div className="flex items-center gap-1.5">
+                <input
+                  value={draft.label}
+                  onChange={(e) => setNewEmailDraft((prev) => ({ ...prev, [group.id]: { label: e.target.value, email: draft.email } }))}
+                  placeholder="Закупки"
+                  className="w-24 rounded-lg border border-slate-200 dark:border-[#3a312a] bg-white dark:bg-[#252119] px-2 py-1 text-xs focus:border-[#0d5a52] focus:outline-none"
+                />
+                <input
+                  value={draft.email}
+                  onChange={(e) => setNewEmailDraft((prev) => ({ ...prev, [group.id]: { label: draft.label, email: e.target.value } }))}
+                  placeholder="zakupki@example.com"
+                  className="flex-1 rounded-lg border border-slate-200 dark:border-[#3a312a] bg-white dark:bg-[#252119] px-2 py-1 text-xs focus:border-[#0d5a52] focus:outline-none"
+                />
+                <button
+                  onClick={() => {
+                    if (!draft.email.trim()) return
+                    saveEmails([...emails, { label: draft.label.trim() || 'Email', email: draft.email.trim() }])
+                    setNewEmailDraft((prev) => ({ ...prev, [group.id]: { label: '', email: '' } }))
+                  }}
+                  className="shrink-0 rounded-lg bg-[#0d5a52] px-2.5 py-1 text-xs font-bold text-white hover:bg-[#0a4840]"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
         <div className="bg-slate-50/60 dark:bg-[#1a1815] px-4 py-2 text-[10px] text-slate-400 dark:text-[#6a5f57]">Данные сохраняются при потере фокуса (клик вне поля)</div>
       </div>
