@@ -988,6 +988,16 @@ function ClassicDesign(props: DesignProps) {
 
   const headerTelegram = visibleContactBlocks.find((b) => b.data.telegram)?.data.telegram
   const headerTelegramHref = headerTelegram ? (headerTelegram.startsWith('http') ? headerTelegram : `https://t.me/${headerTelegram.replace(/^@/, '')}`) : null
+  const headerPhone = visibleContactBlocks.find((b) => b.data.phone)?.data.phone
+
+  const handleRequestCallback = async (phone: string) => {
+    try {
+      const res = await phpPost('request_callback', { phone, workspace_name: workspaceName || undefined })
+      return !!res?.ok
+    } catch {
+      return false
+    }
+  }
 
   return (
     <>
