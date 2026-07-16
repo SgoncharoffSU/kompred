@@ -1029,7 +1029,11 @@ function ClassicDesign(props: DesignProps) {
               <ThemeToggle />
             </div>
           </div>
-          <div className="absolute left-4 top-full z-50 flex -translate-y-1/2 items-center gap-3 md:left-8">
+          {/* Below lg, the icon row above is already tight on width, so the logo/wordmark gets
+              its own full-width row in normal flow instead of hanging (overlapping) below the
+              header — that overlap trick is what caused it to collide with the TG/phone icons
+              on narrow screens. At lg+ there's room, so it reverts to the original hang-below-header layout. */}
+          <div className="flex items-center gap-3 px-4 pb-3 lg:absolute lg:left-8 lg:top-full lg:z-50 lg:-translate-y-1/2 lg:px-0 lg:pb-0">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/logo-siberia.svg" alt={workspaceName || 'СК Сибирия'} className="h-20 w-auto drop-shadow-[0_1px_3px_rgba(255,255,255,0.5)]" />
             <span
@@ -1041,8 +1045,8 @@ function ClassicDesign(props: DesignProps) {
         </header>
 
         <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
-          {/* top-16 (not top-0) leaves a permanent gap below the header so the logo — which
-              hangs ~56px below the header by design — never covers the photo underneath it. */}
+          {/* The logo no longer hangs past the header on mobile (see above), so the sticky
+              photo can sit flush at top-0 instead of leaving room for it. */}
           <div className="lg:hidden sticky top-16 z-0 [&>div]:rounded-none [&>div]:shadow-none [&_.aspect-square]:!aspect-auto [&_.aspect-square]:!h-[62vh]">{photoBlock}</div>
 
           <div className="relative z-10 mx-auto max-w-[1280px] px-4 pb-6 pt-16 md:px-8 md:pb-10 md:pt-20 lg:h-full lg:flex lg:flex-col lg:pt-10">
