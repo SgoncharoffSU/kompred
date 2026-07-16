@@ -1417,8 +1417,8 @@ export default function AdminPage() {
       return next
     })
 
-  const [mediaPickerState, setMediaPickerState] = useState<{ open: boolean; onPick?: (url: string, crop?: CropRect | null) => void; withCrop?: boolean }>({ open: false })
-  const [cropEditorState, setCropEditorState] = useState<{ open: boolean; imageUrl: string; initialCrop?: CropRect | null; onConfirm?: (crop: CropRect) => void; onSkipCrop?: () => void }>({ open: false, imageUrl: '' })
+  const [mediaPickerState, setMediaPickerState] = useState<{ open: boolean; onPick?: (url: string, crop?: CropRect | null) => void; withCrop?: boolean; aspect?: '1/1' | '4/3' }>({ open: false })
+  const [cropEditorState, setCropEditorState] = useState<{ open: boolean; imageUrl: string; initialCrop?: CropRect | null; onConfirm?: (crop: CropRect) => void; onSkipCrop?: () => void; aspect?: '1/1' | '4/3' }>({ open: false, imageUrl: '' })
   const [newBlockName, setNewBlockName] = useState('')
   const [creatingBlock, setCreatingBlock] = useState(false)
   const [insertState, setInsertState] = useState<InsertState>(null)
