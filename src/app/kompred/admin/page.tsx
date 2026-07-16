@@ -3237,11 +3237,13 @@ export default function AdminPage() {
           onSelect={(url) => {
             if (mediaPickerState.withCrop) {
               const onPick = mediaPickerState.onPick
+              const aspect = mediaPickerState.aspect
               closeMediaPicker()
               setCropEditorState({
                 open: true,
                 imageUrl: url,
                 initialCrop: null,
+                aspect,
                 onConfirm: (crop) => {
                   onPick?.(url, crop)
                   setCropEditorState({ open: false, imageUrl: '' })
