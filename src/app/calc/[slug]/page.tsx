@@ -120,10 +120,23 @@ type WorkspaceInfo = {
   workspaceName: string
   popupBlocks: PopupBlock[]
   phpWorkspaceId: string | null
+  chatDelaySeconds: number
+  chatAnimations: boolean
+  chatShowFrom: string
+  chatShowUntil: string
 }
 
 async function getWorkspaceInfo(account: string): Promise<WorkspaceInfo> {
-  const empty: WorkspaceInfo = { contactBlocks: [], workspaceName: '', popupBlocks: [], phpWorkspaceId: null }
+  const empty: WorkspaceInfo = {
+    contactBlocks: [],
+    workspaceName: '',
+    popupBlocks: [],
+    phpWorkspaceId: null,
+    chatDelaySeconds: 8,
+    chatAnimations: true,
+    chatShowFrom: '',
+    chatShowUntil: '',
+  }
   const siteUrl = process.env.SITE_URL || 'http://127.0.0.1:8016'
   try {
     const res = await fetch(`${siteUrl}/api/workspace-lookup?account=${encodeURIComponent(account)}`, { cache: 'no-store' })
@@ -134,6 +147,10 @@ async function getWorkspaceInfo(account: string): Promise<WorkspaceInfo> {
       workspaceName: data.workspace_name || '',
       popupBlocks: Array.isArray(data.popup_blocks) ? data.popup_blocks : [],
       phpWorkspaceId: data.php_workspace_id ? String(data.php_workspace_id) : null,
+      chatDelaySeconds: typeof data.chat_widget_delay_seconds === 'number' ? data.chat_widget_delay_seconds : 8,
+      chatAnimations: typeof data.chat_widget_animations === 'boolean' ? data.chat_widget_animations : true,
+      chatShowFrom: data.chat_widget_show_from || '',
+      chatShowUntil: data.chat_widget_show_until || '',
     }
   } catch {
     return empty
