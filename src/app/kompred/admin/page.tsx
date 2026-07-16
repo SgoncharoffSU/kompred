@@ -494,7 +494,7 @@ function CropEditorModal({
           <div
             ref={boxRef}
             className="relative w-full max-w-sm overflow-hidden rounded-xl cursor-move select-none bg-slate-300 dark:bg-[#2a2520]"
-            style={{ aspectRatio: '4/3', touchAction: 'none' }}
+            style={{ aspectRatio: aspect, touchAction: 'none' }}
             onPointerDown={(e) => {
               if (e.pointerType === 'touch') return
               e.currentTarget.setPointerCapture(e.pointerId)
