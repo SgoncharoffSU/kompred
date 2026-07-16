@@ -1519,7 +1519,10 @@ function ClassicDesign(props: DesignProps) {
               </div>
 
               <aside className="space-y-3 lg:overflow-y-auto lg:pb-6">
-                <div className="hidden lg:block">{photoBlock}</div>
+                {/* Desktop-only: use a wider aspect ratio here (matching the hero photo on the
+                    generated offer page) instead of the shared square crop, which cuts off much
+                    more of the photo than admin/calc show. */}
+                <div className="hidden lg:block [&_.aspect-square]:!aspect-video">{photoBlock}</div>
 
                 <div className="overflow-hidden rounded-2xl border border-[#e0d5c9] dark:border-[#38322a] bg-white dark:bg-[#252119] shadow-card">
                   <div className="border-b border-[#e0d5c9] dark:border-[#38322a] px-5 py-3.5">
