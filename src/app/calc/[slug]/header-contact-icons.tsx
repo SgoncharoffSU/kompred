@@ -39,7 +39,7 @@ export function HeaderContactIcons({
       telegramHref={telegramHref}
       phone={phone}
       onRequestCallback={phone ? handleRequestCallback : undefined}
-      iconClassName={smallIconClass}
+      iconClassName={iconClassName ?? smallIconClass}
     />
   )
 }
