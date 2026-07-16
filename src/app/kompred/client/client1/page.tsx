@@ -1047,7 +1047,7 @@ function ClassicDesign(props: DesignProps) {
         <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
           {/* The logo no longer hangs past the header on mobile (see above), so the sticky
               photo can sit flush at top-0 instead of leaving room for it. */}
-          <div className="lg:hidden sticky top-16 z-0 [&>div]:rounded-none [&>div]:shadow-none [&_.aspect-square]:!aspect-auto [&_.aspect-square]:!h-[62vh]">{photoBlock}</div>
+          <div className="lg:hidden sticky top-0 z-0 [&>div]:rounded-none [&>div]:shadow-none [&_.aspect-square]:!aspect-auto [&_.aspect-square]:!h-[62vh]">{photoBlock}</div>
 
           <div className="relative z-10 mx-auto max-w-[1280px] px-4 pb-6 pt-16 md:px-8 md:pb-10 md:pt-20 lg:h-full lg:flex lg:flex-col lg:pt-10">
             <div className="bg-[#f2ece4] dark:bg-[#1c1a16] lg:flex lg:flex-1 lg:flex-col lg:min-h-0">
