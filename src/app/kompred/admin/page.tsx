@@ -485,7 +485,10 @@ function CropEditorModal({
     <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/70 sm:items-center sm:p-4" onClick={onCancel}>
       <div className="flex w-full flex-col rounded-t-2xl bg-white dark:bg-[#252119] shadow-2xl sm:max-w-lg sm:rounded-2xl" style={{ maxHeight: '95dvh' }} onClick={(e) => e.stopPropagation()}>
         <div className="flex shrink-0 items-center justify-between border-b border-slate-100 dark:border-[#2e2820] px-5 py-3">
-          <h2 className="text-sm font-semibold text-slate-800 dark:text-[#e8e2d9]">Позиция фото</h2>
+          <h2 className="text-sm font-semibold text-slate-800 dark:text-[#e8e2d9]">
+            Позиция фото
+            {aspect === '1/1' && <span className="ml-1.5 font-normal text-slate-400 dark:text-[#6a5f57]">— как в квадратном превью у клиента</span>}
+          </h2>
           <button onClick={onCancel} className="rounded-lg p-2 text-slate-400 dark:text-[#6a5f57] hover:bg-slate-100 dark:hover:bg-[#2e2820]">
             ✕
           </button>
