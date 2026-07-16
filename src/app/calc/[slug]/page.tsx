@@ -180,12 +180,13 @@ export default async function OfferPage({ params }: { params: { slug: string } }
   const offer = await getCalculation(params.slug)
   const workspaceInfo = offer?.account
     ? await getWorkspaceInfo(offer.account)
-    : { contactBlocks: [], workspaceName: '', popupBlocks: [], phpWorkspaceId: null }
-  const { contactBlocks, workspaceName, popupBlocks, phpWorkspaceId } = workspaceInfo
-  const hasContactInfo = contactBlocks.some((b) => b.data.phone || b.data.email || b.data.address || b.data.telegram || b.data.whatsapp)
+    : { contactBlocks: [], workspaceName: '', popupBlocks: [], phpWorkspaceId: null, chatDelaySeconds: 8, chatAnimations: true, chatShowFrom: '', chatShowUntil: '' }
+  const { contactBlocks, workspaceName, popupBlocks, phpWorkspaceId, chatDelaySeconds, chatAnimations, chatShowFrom, chatShowUntil } = workspaceInfo
   const headerTelegram = contactBlocks.find((b) => b.data.telegram)?.data.telegram
   const headerTelegramHref = headerTelegram ? (headerTelegram.startsWith('http') ? headerTelegram : `https://t.me/${headerTelegram.replace(/^@/, '')}`) : null
   const headerPhone = contactBlocks.find((b) => b.data.phone)?.data.phone
+  const OFFER_CHAT_WELCOME =
+    'Отлично! Вы собрали расчет на свою собственную баню.\nМожете поделиться расчетом с родными и близкими и сохранить ссылку для себя.\nЕсли возникнут вопросы, с удовольствием отвечу.'
   const editUrl = offer?.account ? `/cli${offer.account}${offer.model_id ? `?model=${offer.model_id}` : ''}` : null
   // A popup block can be duplicated and re-scoped to different models via the group's own
   // model_ids — only the block(s) actually allowed for this offer's model should render, or
