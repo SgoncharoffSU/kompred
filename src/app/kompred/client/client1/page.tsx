@@ -889,9 +889,18 @@ function ClassicDesign(props: DesignProps) {
     </div>
   )
 
+  const handleRequestCallback = async (phone: string) => {
+    try {
+      const res = await phpPost('request_callback', { phone, workspace_name: workspaceName || undefined })
+      return !!res?.ok
+    } catch {
+      return false
+    }
+  }
+
   const visibleContactBlocks = contactBlocks.filter((b) => {
     const d = b.data
-    return d.phone || d.telegram || d.whatsapp || d.email || d.address || d.note
+    return d.phone || d.telegram || d.whatsapp || d.email || d.emails?.length || d.address || d.requisites || d.note
   })
 
   const contactsCards = visibleContactBlocks.map((block) => {
