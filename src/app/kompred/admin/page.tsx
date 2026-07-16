@@ -1636,7 +1636,8 @@ export default function AdminPage() {
     ...options.map((o) => ({ type: 'option' as const, id: o.id, name: o.name, groupId: o.group_id, groupName: groups.find((g) => g.id === o.group_id)?.name })),
   ]
 
-  const openMediaPicker = (onPick: (url: string, crop?: CropRect | null) => void, withCrop?: boolean) => setMediaPickerState({ open: true, onPick, withCrop })
+  const openMediaPicker = (onPick: (url: string, crop?: CropRect | null) => void, withCrop?: boolean, aspect?: '1/1' | '4/3') =>
+    setMediaPickerState({ open: true, onPick, withCrop, aspect })
   const closeMediaPicker = () => setMediaPickerState({ open: false })
 
   const deleteMedia = async (id: number) => {
