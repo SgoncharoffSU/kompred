@@ -1820,6 +1820,8 @@ function ClassicDesign(props: DesignProps) {
         welcomeMessage={chatWelcome}
         appearDelaySeconds={chatDelaySeconds}
         animationsEnabled={chatAnimations}
+        showFrom={chatShowFrom}
+        showUntil={chatShowUntil}
       />
     </>
   )
