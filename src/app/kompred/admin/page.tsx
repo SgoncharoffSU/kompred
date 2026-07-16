@@ -1552,6 +1552,8 @@ export default function AdminPage() {
         if (d.chat_widget_welcome !== undefined) setChatWelcome(d.chat_widget_welcome)
         if (typeof d.chat_widget_delay_seconds === 'number') setChatDelaySeconds(d.chat_widget_delay_seconds)
         if (typeof d.chat_widget_animations === 'boolean') setChatAnimations(d.chat_widget_animations)
+        if (d.chat_widget_show_from !== undefined) setChatShowFrom(d.chat_widget_show_from)
+        if (d.chat_widget_show_until !== undefined) setChatShowUntil(d.chat_widget_show_until)
         setPublishedModelIds(d.published_model_ids ?? null)
       })
     fetch('/api/auth/me')
