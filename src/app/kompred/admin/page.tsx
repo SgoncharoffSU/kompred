@@ -1485,6 +1485,8 @@ export default function AdminPage() {
   const [chatWelcome, setChatWelcome] = useState('')
   const [chatDelaySeconds, setChatDelaySeconds] = useState(8)
   const [chatAnimations, setChatAnimations] = useState(true)
+  const [chatShowFrom, setChatShowFrom] = useState('')
+  const [chatShowUntil, setChatShowUntil] = useState('')
   const [chatPanelOpen, setChatPanelOpen] = useState(false)
 
   const [deliveryConfigs, setDeliveryConfigs] = useState<Record<string, DeliveryConfig>>({})
