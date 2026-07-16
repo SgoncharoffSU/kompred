@@ -10,11 +10,13 @@ export function HeaderContactIcons({
   phone,
   wid,
   workspaceName,
+  iconClassName,
 }: {
   telegramHref?: string | null
   phone?: string | null
   wid?: string | null
   workspaceName?: string | null
+  iconClassName?: string
 }) {
   const handleRequestCallback = async (callbackPhone: string) => {
     try {
