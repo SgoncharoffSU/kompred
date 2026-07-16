@@ -738,6 +738,8 @@ interface DesignProps {
   chatWelcome: string
   chatDelaySeconds: number
   chatAnimations: boolean
+  chatShowFrom: string
+  chatShowUntil: string
   selectedOptionChoices: Record<string, PopupChoice>
   onOptionChoiceSelect: (optionId: string, choice: PopupChoice) => void
 }
