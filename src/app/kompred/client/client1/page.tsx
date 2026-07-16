@@ -1010,15 +1010,6 @@ function ClassicDesign(props: DesignProps) {
   const headerTelegramHref = headerTelegram ? (headerTelegram.startsWith('http') ? headerTelegram : `https://t.me/${headerTelegram.replace(/^@/, '')}`) : null
   const headerPhone = visibleContactBlocks.find((b) => b.data.phone)?.data.phone
 
-  const handleRequestCallback = async (phone: string) => {
-    try {
-      const res = await phpPost('request_callback', { phone, workspace_name: workspaceName || undefined })
-      return !!res?.ok
-    } catch {
-      return false
-    }
-  }
-
   return (
     <>
       <main className="h-screen flex flex-col bg-[#f2ece4] dark:bg-[#1c1a16]">
