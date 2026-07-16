@@ -320,12 +320,14 @@ function CropEditorModal({
   onConfirm,
   onCancel,
   onSkipCrop,
+  aspect = '4/3',
 }: {
   imageUrl: string
   initialCrop?: CropRect | null
   onConfirm: (crop: CropRect) => void
   onCancel: () => void
   onSkipCrop?: () => void
+  aspect?: '1/1' | '4/3'
 }) {
   const boxRef = useRef<HTMLDivElement>(null)
   const imgRef = useRef<HTMLImageElement>(null)
