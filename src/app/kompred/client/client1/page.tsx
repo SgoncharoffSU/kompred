@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Yeseva_One } from 'next/font/google'
 import { ThemeToggle } from '@/components/ThemeProvider'
+import { HeaderContactIcons } from '@/components/HeaderContactIcons'
 
 const brandFont = Yeseva_One({ subsets: ['cyrillic', 'latin'], weight: '400', display: 'swap' })
 
