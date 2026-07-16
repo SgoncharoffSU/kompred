@@ -2862,7 +2862,7 @@ export default function AdminPage() {
       setContactBlocks(next)
       await saveContactBlocks(next)
     }
-    const fields: { key: keyof typeof data; label: string; placeholder: string; prefix: string }[] = [
+    const fields: { key: Exclude<keyof typeof data, 'emails'>; label: string; placeholder: string; prefix: string }[] = [
       { key: 'phone', label: 'Телефон', placeholder: '+7 999 123-45-67', prefix: '📞' },
       { key: 'telegram', label: 'Telegram', placeholder: '@username или t.me/...', prefix: '✈️' },
       { key: 'whatsapp', label: 'WhatsApp', placeholder: '+7 999 123-45-67', prefix: '💬' },
