@@ -119,10 +119,11 @@ type WorkspaceInfo = {
   contactBlocks: ContactBlock[]
   workspaceName: string
   popupBlocks: PopupBlock[]
+  phpWorkspaceId: string | null
 }
 
 async function getWorkspaceInfo(account: string): Promise<WorkspaceInfo> {
-  const empty: WorkspaceInfo = { contactBlocks: [], workspaceName: '', popupBlocks: [] }
+  const empty: WorkspaceInfo = { contactBlocks: [], workspaceName: '', popupBlocks: [], phpWorkspaceId: null }
   const siteUrl = process.env.SITE_URL || 'http://127.0.0.1:8016'
   try {
     const res = await fetch(`${siteUrl}/api/workspace-lookup?account=${encodeURIComponent(account)}`, { cache: 'no-store' })
@@ -132,6 +133,7 @@ async function getWorkspaceInfo(account: string): Promise<WorkspaceInfo> {
       contactBlocks: Array.isArray(data.contact_blocks) ? data.contact_blocks : [],
       workspaceName: data.workspace_name || '',
       popupBlocks: Array.isArray(data.popup_blocks) ? data.popup_blocks : [],
+      phpWorkspaceId: data.php_workspace_id ? String(data.php_workspace_id) : null,
     }
   } catch {
     return empty
