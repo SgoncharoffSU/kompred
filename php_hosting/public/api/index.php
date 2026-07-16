@@ -180,6 +180,13 @@ $col_check = $db->query("SHOW COLUMNS FROM models LIKE 'image_crop'");
 if ($col_check && $col_check->num_rows === 0) {
     $db->query("ALTER TABLE models ADD COLUMN image_crop VARCHAR(200) DEFAULT NULL");
 }
+$col_check = $db->query("SHOW COLUMNS FROM models LIKE 'offer_image_crop'");
+if ($col_check && $col_check->num_rows === 0) {
+    // Independent crop used only by the fixed/generated offer page (calc/[slug]) — the
+    // interactive configurator keeps using image_crop, since the two show the photo at very
+    // different aspect ratios (square vs wide) and one crop can't look right in both.
+    $db->query("ALTER TABLE models ADD COLUMN offer_image_crop VARCHAR(200) DEFAULT NULL");
+}
 $col_check = $db->query("SHOW COLUMNS FROM option_groups LIKE 'parent_group_id'");
 if ($col_check && $col_check->num_rows === 0) {
     $db->query("ALTER TABLE option_groups ADD COLUMN parent_group_id INT NULL");
@@ -314,7 +321,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'bootstrap') {
     $media = array();
     $folders = array();
 
-    $stmt = $db->prepare('SELECT id,name,image_url,image_crop,base_price,sort_order,created_at FROM models WHERE workspace_id=? ORDER BY sort_order ASC, id ASC');
+    $stmt = $db->prepare('SELECT id,name,image_url,image_crop,offer_image_crop,base_price,sort_order,created_at FROM models WHERE workspace_id=? ORDER BY sort_order ASC, id ASC');
     $stmt->bind_param('i', $WORKSPACE_ID);
     $stmt->execute();
     $res = $stmt->get_result();
@@ -586,6 +593,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'update_model_image') {
     json_out(array('ok' => true));
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'update_model_offer_crop') {
+    $d = json_decode(file_get_contents('php://input'), true);
+    $id = intval(isset($d['id']) ? $d['id'] : 0);
+    $image_crop = isset($d['image_crop']) ? $d['image_crop'] : null;
+    if ($id <= 0) json_out(array('ok' => false, 'error' => 'id required'));
+    $stmt = $db->prepare('UPDATE models SET offer_image_crop=? WHERE id=? AND workspace_id=?');
+    $stmt->bind_param('sii', $image_crop, $id, $WORKSPACE_ID);
+    $stmt->execute();
+    json_out(array('ok' => true));
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'update_option_image') {
     $d = json_decode(file_get_contents('php://input'), true);
     $id = intval(isset($d['id']) ? $d['id'] : 0);
@@ -610,8 +628,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'duplicate_model') {
         if (!$src) throw new Exception('source not found');
 
         $new_name = substr($src['name'], 0, 140) . ' — копия';
-        $stmt = $db->prepare('INSERT INTO models (name,image_url,image_crop,base_price,workspace_id) VALUES (?,?,?,?,?)');
-        $stmt->bind_param('sssdi', $new_name, $src['image_url'], $src['image_crop'], $src['base_price'], $WORKSPACE_ID);
+        $stmt = $db->prepare('INSERT INTO models (name,image_url,image_crop,offer_image_crop,base_price,workspace_id) VALUES (?,?,?,?,?,?)');
+        $stmt->bind_param('ssssdi', $new_name, $src['image_url'], $src['image_crop'], $src['offer_image_crop'], $src['base_price'], $WORKSPACE_ID);
         $stmt->execute();
         $new_id = $db->insert_id;
 
@@ -1537,7 +1555,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'get_calculation') {
         foreach ((array)$snapshot['selected_option_ids'] as $oid) $qty_by_id[intval($oid)] = 1;
     }
     $option_ids = array_keys($qty_by_id);
-    $stmt2 = $db->prepare('SELECT id, name, image_url, base_price FROM models WHERE id=? AND workspace_id=? LIMIT 1');
+    $stmt2 = $db->prepare('SELECT id, name, image_url, offer_image_crop, base_price FROM models WHERE id=? AND workspace_id=? LIMIT 1');
     $stmt2->bind_param('ii', $model_id, $calc_workspace_id);
     $stmt2->execute();
     $model = $stmt2->get_result()->fetch_assoc();
@@ -1654,6 +1672,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'get_calculation') {
         'fixed_at' => $calc['fixed_at'],
         'model_name' => $model ? $model['name'] : 'Модель',
         'model_image_url' => $model_image,
+        'model_offer_image_crop' => $model ? ($model['offer_image_crop'] ?? null) : null,
         'model_id' => $model_id,
         'layout_name' => $layout ? $layout['name'] : 'Планировка',
         'selected_options' => $selected_options,

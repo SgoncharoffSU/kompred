@@ -1,5 +1,6 @@
 ﻿import type { ReactNode } from 'react'
 import { Yeseva_One } from 'next/font/google'
+import { CroppedHeroImage } from './cropped-hero-image'
 import { InclusionToggle } from './inclusion-toggle'
 import { PrintButton } from './print-button'
 import { ShareButton } from './share-button'
@@ -35,6 +36,7 @@ type OfferData = {
   fixed_at: string
   model_name: string
   model_image_url: string
+  model_offer_image_crop: { mode?: 'position' | 'crop'; x: number; y: number; w?: number; h?: number } | null
   model_id: string
   layout_name: string
   selected_options: SelectedOption[]
@@ -80,6 +82,15 @@ async function getCalculation(slug: string): Promise<OfferData | null> {
       fixed_at: data.fixed_at,
       model_name: data.model_name || 'Модель',
       model_image_url: normalizeUrl(data.model_image_url || ''),
+      model_offer_image_crop: (() => {
+        if (!data.model_offer_image_crop) return null
+        try {
+          const parsed = JSON.parse(data.model_offer_image_crop)
+          return parsed && typeof parsed.x === 'number' ? parsed : null
+        } catch {
+          return null
+        }
+      })(),
       model_id: String(data.model_id ?? ''),
       layout_name: data.layout_name || '',
       selected_options: (data.selected_options || []).map(
@@ -201,12 +212,14 @@ export default async function OfferPage({ params }: { params: { slug: string } }
         {/* Hero photo */}
         {offer.model_image_url && (
           <div className="relative overflow-hidden rounded-2xl shadow-card">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={offer.model_image_url}
-              alt={offer.model_name}
-              className="aspect-video w-full object-cover"
-            />
+            <div className="aspect-video w-full">
+              <CroppedHeroImage
+                src={offer.model_image_url}
+                crop={offer.model_offer_image_crop}
+                alt={offer.model_name}
+                className="h-full w-full object-cover"
+              />
+            </div>
             <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent px-6 pb-6 pt-20">
               <div className="text-[10px] font-semibold uppercase tracking-widest text-white/50">Персональное предложение</div>
               <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-white md:text-3xl">

@@ -22,6 +22,7 @@ interface AdminModel {
   name: string
   image_url: string
   image_crop: string | null
+  offer_image_crop: string | null
   base_price: string
   sort_order: number
 }
@@ -258,7 +259,7 @@ function RepositionableImage({
   crop?: CropRect | null
   alt?: string
   onReposition: (x: number, y: number) => void
-  onChangePicker: () => void
+  onChangePicker?: () => void
   onCropEditor: () => void
 }) {
   const [live, setLive] = useState<CropRect | null>(null)
@@ -301,9 +302,11 @@ function RepositionableImage({
     >
       <CroppedImage src={src} crop={live ?? crop} alt={alt} />
       <div className="absolute bottom-1.5 right-1.5 z-10 flex gap-1">
-        <button onPointerDown={(e) => e.stopPropagation()} onClick={onChangePicker} className="rounded-lg bg-black/60 px-2 py-1 text-[11px] font-bold text-white hover:bg-black/80" title="Изменить фото">
-          📷
-        </button>
+        {onChangePicker && (
+          <button onPointerDown={(e) => e.stopPropagation()} onClick={onChangePicker} className="rounded-lg bg-black/60 px-2 py-1 text-[11px] font-bold text-white hover:bg-black/80" title="Изменить фото">
+            📷
+          </button>
+        )}
         <button onPointerDown={(e) => e.stopPropagation()} onClick={onCropEditor} className="rounded-lg bg-black/60 px-2 py-1 text-[11px] font-bold text-white hover:bg-black/80" title="Кадрировать">
           ✂
         </button>
@@ -1665,6 +1668,19 @@ export default function AdminPage() {
       return
     }
     setModels((prev) => prev.map((m) => (m.id === selectedModel.id ? { ...m, image_url: url, image_crop: cropJson } : m)))
+  }
+
+  // Independent crop used only by the fixed/generated offer page (calc/[slug]) — same photo,
+  // framed separately since that page shows it at a much wider aspect ratio than the configurator.
+  const setModelOfferCrop = async (crop?: CropRect | null) => {
+    if (!selectedModel) return
+    const cropJson = crop ? JSON.stringify(crop) : null
+    const res = await phpPost('update_model_offer_crop', { id: Number(selectedModel.id), image_crop: cropJson })
+    if (!res.ok) {
+      alert('Не удалось сохранить кадр: ' + (res.error || 'ошибка сервера'))
+      return
+    }
+    setModels((prev) => prev.map((m) => (m.id === selectedModel.id ? { ...m, offer_image_crop: cropJson } : m)))
   }
 
   const saveModelEdits = async () => {
@@ -3107,6 +3123,48 @@ export default function AdminPage() {
                   </div>
                 </div>
               </div>
+
+              {selectedModel.image_url && (
+                <div className="overflow-hidden rounded-2xl border border-slate-100 dark:border-[#2e2820] bg-white dark:bg-[#252119] shadow-sm">
+                  <div className="flex flex-col sm:flex-row gap-4 p-4 lg:p-5">
+                    <div className="group relative h-32 w-full sm:w-56 sm:shrink-0 overflow-hidden rounded-xl border-2 border-dashed border-slate-200 dark:border-[#3a312a] bg-slate-50 dark:bg-[#1f1c16]">
+                      <RepositionableImage
+                        src={selectedModel.image_url}
+                        crop={parseCropSafe(selectedModel.offer_image_crop) ?? parseCropSafe(selectedModel.image_crop)}
+                        alt={selectedModel.name}
+                        onReposition={(x, y) => setModelOfferCrop({ x, y, w: 100, h: 100, mode: 'position' })}
+                        onCropEditor={() =>
+                          setCropEditorState({
+                            open: true,
+                            imageUrl: selectedModel.image_url,
+                            initialCrop: parseCropSafe(selectedModel.offer_image_crop) ?? parseCropSafe(selectedModel.image_crop),
+                            aspect: '4/3',
+                            onConfirm: (crop) => {
+                              setModelOfferCrop(crop)
+                              setCropEditorState({ open: false, imageUrl: '' })
+                            },
+                          })
+                        }
+                      />
+                    </div>
+                    <div className="flex min-w-0 flex-1 flex-col justify-center gap-1.5">
+                      <div className="text-sm font-semibold text-slate-700 dark:text-[#d5cfc7]">Фото для сформированного КП</div>
+                      <p className="text-xs text-slate-400 dark:text-[#6a5f57]">
+                        То же фото, но отдельный кадр — на странице готового предложения оно показывается шире, чем в конфигураторе, и один и тот же кадр не всегда хорошо смотрится в обоих местах.
+                        {!selectedModel.offer_image_crop && ' Пока не задан — используется тот же кадр, что и в конфигураторе.'}
+                      </p>
+                      {selectedModel.offer_image_crop && (
+                        <button
+                          onClick={() => setModelOfferCrop(null)}
+                          className="w-fit rounded-lg border border-slate-200 dark:border-[#3a312a] px-2.5 py-1 text-xs text-slate-500 dark:text-[#9a8f87] hover:bg-slate-50"
+                        >
+                          Сбросить (использовать кадр из конфигуратора)
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="overflow-hidden rounded-2xl border border-slate-100 dark:border-[#2e2820] bg-white dark:bg-[#252119] shadow-sm">
                 <div className="border-b border-slate-100 dark:border-[#2e2820] px-5 py-2.5">
