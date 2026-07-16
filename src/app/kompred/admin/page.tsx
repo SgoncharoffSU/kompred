@@ -2003,23 +2003,45 @@ export default function AdminPage() {
       max_width: maxWidth,
       unit: editOptionUnit.trim() || 'шт',
     })
-    setOptions((prev) =>
-      prev.map((o) =>
-        o.id === editingOptionId
-          ? {
-              ...o,
-              name: editOptionName.trim(),
-              price: editOptionPrice,
-              base_price: editOptionBasePrice,
-              is_default: editOptionIsDefault,
-              description: editOptionDescription.trim(),
-              popup_options: choicesForState,
-              max_length: maxLength,
-              max_width: maxWidth,
-              unit: editOptionUnit.trim() || 'шт',
-            }
-          : o
+
+    // A single-select group can only have one default option — marking this one as default
+    // must clear it on any siblings, or the client shows two options pre-selected at once.
+    const current = options.find((o) => o.id === editingOptionId)
+    const group = current ? groups.find((g) => g.id === current.group_id) : null
+    const siblingIdsToUnset =
+      editOptionIsDefault && current && group?.selection_type === 'multiple'
+        ? []
+        : editOptionIsDefault && current && group?.selection_type !== 'multiple'
+          ? options.filter((o) => o.group_id === current.group_id && o.id !== editingOptionId && Number(o.is_default)).map((o) => o.id)
+          : []
+    if (siblingIdsToUnset.length > 0) {
+      await Promise.all(
+        siblingIdsToUnset.map((id) => {
+          const sib = options.find((o) => o.id === id)!
+          return phpPost('update_option_json', { id: Number(id), name: sib.name, price: Number(sib.price), is_default: 0 })
+        })
       )
+    }
+
+    setOptions((prev) =>
+      prev.map((o) => {
+        if (o.id === editingOptionId) {
+          return {
+            ...o,
+            name: editOptionName.trim(),
+            price: editOptionPrice,
+            base_price: editOptionBasePrice,
+            is_default: editOptionIsDefault,
+            description: editOptionDescription.trim(),
+            popup_options: choicesForState,
+            max_length: maxLength,
+            max_width: maxWidth,
+            unit: editOptionUnit.trim() || 'шт',
+          }
+        }
+        if (siblingIdsToUnset.includes(o.id)) return { ...o, is_default: false }
+        return o
+      })
     )
     setEditingOptionId(null)
     setSavingOption(false)

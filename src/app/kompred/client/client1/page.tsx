@@ -1917,11 +1917,17 @@ export default function ClientPage() {
         if (layoutList.length > 0) setSelectedLayoutId(layoutList[0].id)
 
         const perGroup = await Promise.all(groupList.map(async (g) => ({ groupId: g.id, options: await optionService.getOptionsByGroup(g.id, selectedModelId) })))
+        const groupById = new Map(groupList.map((g) => [g.id, g]))
         const byGroup: Record<string, ClientOption[]> = {}
         const defaults: Record<string, string[]> = {}
         perGroup.forEach(({ groupId, options }) => {
           byGroup[groupId] = options
-          const defaultIds = options.filter((o) => o.is_default).map((o) => o.id)
+          let defaultIds = options.filter((o) => o.is_default).map((o) => o.id)
+          // A single-select group can only have one default selected — if the data has
+          // several (e.g. left over from duplicating a model/option), keep just the first.
+          if (groupById.get(groupId)?.selection_type === 'single' && defaultIds.length > 1) {
+            defaultIds = defaultIds.slice(0, 1)
+          }
           if (defaultIds.length > 0) defaults[groupId] = defaultIds
         })
         setOptionsByGroup(byGroup)

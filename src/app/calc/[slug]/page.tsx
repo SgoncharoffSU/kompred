@@ -39,6 +39,7 @@ type OfferData = {
   layout_name: string
   selected_options: SelectedOption[]
   account: string | null
+  popup_group_ids: string[]
 }
 
 type ContactBlock = {
@@ -95,6 +96,7 @@ async function getCalculation(slug: string): Promise<OfferData | null> {
         })
       ),
       account: data.account ? String(data.account) : null,
+      popup_group_ids: Array.isArray(data.popup_group_ids) ? data.popup_group_ids.map(String) : [],
     }
   } catch {
     return null
@@ -150,9 +152,12 @@ export default async function OfferPage({ params }: { params: { slug: string } }
   const hasContactInfo = contactBlocks.some((b) => b.data.phone || b.data.email || b.data.address || b.data.telegram || b.data.whatsapp)
   const headerPhone = contactBlocks.find((b) => b.data.phone)?.data.phone
   const editUrl = offer?.account ? `/cli${offer.account}${offer.model_id ? `?model=${offer.model_id}` : ''}` : null
+  // A popup block can be duplicated and re-scoped to different models via the group's own
+  // model_ids — only the block(s) actually allowed for this offer's model should render, or
+  // duplicated blocks with identical content show up as repeated items.
   const inclusionSections = offer
     ? popupBlocks
-        .filter((b) => b.type === 'inclusion')
+        .filter((b) => b.type === 'inclusion' && offer.popup_group_ids.includes(b.id))
         .flatMap((b) => sectionsForModel(b.data.sections || [], offer.model_id))
     : []
 

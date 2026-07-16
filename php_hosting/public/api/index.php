@@ -1630,6 +1630,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'get_calculation') {
     $model_image = $model ? ($model['image_url'] ?? '') : '';
     // base_price: prefer value saved at creation time, fallback to current model price
     $base_price = isset($snapshot['base_price']) ? floatval($snapshot['base_price']) : ($model ? floatval($model['base_price']) : 0);
+
+    // Popup blocks (e.g. "what's included") can be duplicated and re-scoped per model via
+    // model_ids — only the block(s) actually allowed for THIS calculation's model should be
+    // shown, or duplicated blocks with the same content render as repeated items.
+    $popup_group_ids = array();
+    $pg = $db->query("SELECT id, model_ids FROM option_groups WHERE workspace_id=$calc_workspace_id AND block_type='popup'");
+    if ($pg) {
+        while ($g = $pg->fetch_assoc()) {
+            $ids = $g['model_ids'] ? json_decode($g['model_ids'], true) : null;
+            if (!$ids || in_array($model_id, array_map('intval', $ids))) {
+                $popup_group_ids[] = strval($g['id']);
+            }
+        }
+    }
+
     json_out(array(
         'ok' => true,
         'id' => $calc['id'],
@@ -1643,6 +1658,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'get_calculation') {
         'layout_name' => $layout ? $layout['name'] : 'Планировка',
         'selected_options' => $selected_options,
         'account' => isset($snapshot['account']) ? $snapshot['account'] : null,
+        'popup_group_ids' => $popup_group_ids,
     ));
 }
 
