@@ -935,112 +935,100 @@ function ClassicDesign(props: DesignProps) {
 
   const contactsCards = visibleContactBlocks.map((block) => {
     const d = block.data
-    const textLinks: { href: string; label: string; icon: React.ReactNode }[] = []
-    if (d.phone)
-      textLinks.push({
-        href: `tel:${d.phone.replace(/\s/g, '')}`,
-        label: d.phone,
-        icon: (
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M22 16.92v3a2 2 0 0 1-2.18 2A19.79 19.79 0 0 1 11.39 19a19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" />
-          </svg>
-        ),
-      })
-    if (d.email)
-      textLinks.push({
-        href: `mailto:${d.email}`,
-        label: d.email,
-        icon: (
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
-            <polyline points="22,6 12,13 2,6" />
-          </svg>
-        ),
-      })
-    if (d.address)
-      textLinks.push({
-        href: `https://yandex.ru/maps/?text=${encodeURIComponent(d.address)}`,
-        label: d.address,
-        icon: (
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
-            <circle cx="12" cy="10" r="3" />
-          </svg>
-        ),
-      })
-
-    const iconLinks: { href: string; label: string; icon: React.ReactNode }[] = []
-    if (d.telegram)
-      iconLinks.push({
-        href: d.telegram.startsWith('http') ? d.telegram : `https://t.me/${d.telegram.replace(/^@/, '')}`,
-        label: 'Telegram',
-        icon: (
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.248-1.97 9.286c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.871 4.326-2.962-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.833.935z" />
-          </svg>
-        ),
-      })
-    if (d.whatsapp)
-      iconLinks.push({
-        href: `https://wa.me/${d.whatsapp.replace(/\D/g, '')}`,
-        label: 'WhatsApp',
-        icon: (
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413z" />
-          </svg>
-        ),
-      })
+    const blockTelegramHref = d.telegram ? (d.telegram.startsWith('http') ? d.telegram : `https://t.me/${d.telegram.replace(/^@/, '')}`) : null
+    const emailEntries = d.emails && d.emails.length > 0 ? d.emails : d.email ? [{ label: 'Email', email: d.email }] : []
 
     return (
       <div key={block.id} className="overflow-hidden rounded-2xl border border-[#e0d5c9] dark:border-[#38322a] bg-white dark:bg-[#252119] shadow-card">
         <div className="border-b border-[#e0d5c9] dark:border-[#38322a] px-5 py-3.5">
           <span className="text-xs font-semibold uppercase tracking-widest text-[#7a6f66] dark:text-[#9a8f87]">{block.title || 'Контакты'}</span>
         </div>
-        <div className="divide-y divide-[#e0d5c9] dark:divide-[#38322a]">
-          {textLinks.map((link, i) => (
+        <div className="flex flex-wrap items-center gap-2 px-5 py-3.5">
+          <HeaderContactIcons telegramHref={blockTelegramHref} phone={d.phone} onRequestCallback={d.phone ? handleRequestCallback : undefined} />
+
+          {emailEntries.length > 0 && (
+            <IconPopoverButton
+              title="Email"
+              icon={
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+                  <polyline points="22,6 12,13 2,6" />
+                </svg>
+              }
+            >
+              <div className="flex flex-col gap-1">
+                {emailEntries.map((e, i) => (
+                  <a key={i} href={`mailto:${e.email}`} className="rounded-lg px-2 py-1.5 text-sm hover:bg-[#0d5a52]/10">
+                    <span className="font-medium text-[#1a1612] dark:text-[#ede7de]">{e.label}</span>
+                    <span className="block text-xs text-[#7a6f66] dark:text-[#9a8f87]">{e.email}</span>
+                  </a>
+                ))}
+              </div>
+            </IconPopoverButton>
+          )}
+
+          {d.address && (
+            <IconPopoverButton
+              title="Адрес"
+              icon={
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                  <circle cx="12" cy="10" r="3" />
+                </svg>
+              }
+            >
+              <p className="mb-2 text-sm text-[#1a1612] dark:text-[#ede7de]">{d.address}</p>
+              <a
+                href={`https://yandex.ru/maps/?text=${encodeURIComponent(d.address)}`}
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs font-semibold text-[#0d5a52] dark:text-[#4db8ae] hover:underline"
+              >
+                Открыть на карте →
+              </a>
+            </IconPopoverButton>
+          )}
+
+          {d.requisites && (
+            <IconPopoverButton
+              title="Реквизиты"
+              icon={
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h1m4 0h1m-6 4h1m4 0h1m-6 4h1m4 0h1" />
+                </svg>
+              }
+            >
+              <p className="whitespace-pre-line text-xs leading-relaxed text-[#1a1612] dark:text-[#ede7de]">{d.requisites}</p>
+            </IconPopoverButton>
+          )}
+
+          {d.whatsapp && (
             <a
-              key={i}
-              href={link.href}
+              href={`https://wa.me/${d.whatsapp.replace(/\D/g, '')}`}
               target="_blank"
               rel="noreferrer"
-              className="flex items-center gap-3 px-5 py-3.5 transition-colors hover:bg-[#f8f4f0] dark:hover:bg-[#1f1c16] group"
+              title="WhatsApp"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#0d5a52]/10 dark:bg-[#0d5a52]/20 text-[#0d5a52] transition-colors hover:bg-[#0d5a52] hover:text-white"
             >
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#0d5a52]/10 dark:bg-[#0d5a52]/20 text-[#0d5a52] group-hover:bg-[#0d5a52] group-hover:text-white transition-colors">
-                {link.icon}
-              </span>
-              <span className="text-sm text-[#1a1612] dark:text-[#ede7de] group-hover:text-[#0d5a52] dark:group-hover:text-[#4db8ac] transition-colors">{link.label}</span>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413z" />
+              </svg>
             </a>
-          ))}
-          {iconLinks.length > 0 && (
-            <div className="flex items-center gap-2 px-5 py-3.5">
-              {iconLinks.map((link, i) => (
-                <a
-                  key={i}
-                  href={link.href}
-                  target="_blank"
-                  rel="noreferrer"
-                  title={link.label}
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#0d5a52]/10 dark:bg-[#0d5a52]/20 text-[#0d5a52] transition-colors hover:bg-[#0d5a52] hover:text-white"
-                >
-                  {link.icon}
-                </a>
-              ))}
-            </div>
-          )}
-          {d.note && (
-            <div className="px-5 py-3.5 flex items-start gap-3">
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#0d5a52]/10 dark:bg-[#0d5a52]/20 text-[#0d5a52]">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                  <polyline points="14,2 14,8 20,8" />
-                  <line x1="16" y1="13" x2="8" y2="13" />
-                  <line x1="16" y1="17" x2="8" y2="17" />
-                </svg>
-              </span>
-              <span className="pt-1.5 text-sm text-[#7a6f66] dark:text-[#9a8f87] leading-relaxed whitespace-pre-line">{d.note}</span>
-            </div>
           )}
         </div>
+        {d.note && (
+          <div className="flex items-start gap-3 border-t border-[#e0d5c9] px-5 py-3.5 dark:border-[#38322a]">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#0d5a52]/10 dark:bg-[#0d5a52]/20 text-[#0d5a52]">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14,2 14,8 20,8" />
+                <line x1="16" y1="13" x2="8" y2="13" />
+                <line x1="16" y1="17" x2="8" y2="17" />
+              </svg>
+            </span>
+            <span className="pt-1.5 text-sm text-[#7a6f66] dark:text-[#9a8f87] leading-relaxed whitespace-pre-line">{d.note}</span>
+          </div>
+        )}
       </div>
     )
   })
