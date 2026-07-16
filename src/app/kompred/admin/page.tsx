@@ -122,7 +122,16 @@ interface PopupBlock {
 interface ContactBlock {
   id: string
   title?: string
-  data: { phone?: string; telegram?: string; whatsapp?: string; email?: string; address?: string; note?: string }
+  data: {
+    phone?: string
+    telegram?: string
+    whatsapp?: string
+    email?: string
+    emails?: { label: string; email: string }[]
+    address?: string
+    requisites?: string
+    note?: string
+  }
 }
 
 interface Subscription {
@@ -1473,6 +1482,11 @@ export default function AdminPage() {
   const [savingText, setSavingText] = useState(false)
   const [textsPanelOpen, setTextsPanelOpen] = useState(false)
 
+  const [chatWelcome, setChatWelcome] = useState('')
+  const [chatDelaySeconds, setChatDelaySeconds] = useState(8)
+  const [chatAnimations, setChatAnimations] = useState(true)
+  const [chatPanelOpen, setChatPanelOpen] = useState(false)
+
   const [deliveryConfigs, setDeliveryConfigs] = useState<Record<string, DeliveryConfig>>({})
   const [popupBlocks, setPopupBlocks] = useState<PopupBlock[]>([])
   const [contactBlocks, setContactBlocks] = useState<ContactBlock[]>([])
@@ -1533,6 +1547,9 @@ export default function AdminPage() {
         if (d.delivery_configs) setDeliveryConfigs(d.delivery_configs)
         if (Array.isArray(d.popup_blocks)) setPopupBlocks(d.popup_blocks)
         if (Array.isArray(d.contact_blocks)) setContactBlocks(d.contact_blocks)
+        if (d.chat_widget_welcome !== undefined) setChatWelcome(d.chat_widget_welcome)
+        if (typeof d.chat_widget_delay_seconds === 'number') setChatDelaySeconds(d.chat_widget_delay_seconds)
+        if (typeof d.chat_widget_animations === 'boolean') setChatAnimations(d.chat_widget_animations)
         setPublishedModelIds(d.published_model_ids ?? null)
       })
     fetch('/api/auth/me')
@@ -3277,6 +3294,71 @@ export default function AdminPage() {
                         </div>
                       </div>
                     )}
+                  </div>
+                )}
+              </div>
+
+              <div className="overflow-hidden rounded-2xl border border-slate-100 dark:border-[#2e2820] bg-white dark:bg-[#252119] shadow-sm">
+                <button onClick={() => setChatPanelOpen((v) => !v)} className="flex w-full items-center justify-between px-5 py-4 text-left">
+                  <div>
+                    <div className="text-sm font-semibold text-slate-700 dark:text-[#d5cfc7]">Чат на сайте</div>
+                    <div className="mt-0.5 text-xs text-slate-400 dark:text-[#6a5f57]">Приветственное сообщение, задержка появления, анимации</div>
+                  </div>
+                  <span className={`text-slate-400 dark:text-[#6a5f57] transition-transform ${chatPanelOpen ? 'rotate-180' : ''}`}>▾</span>
+                </button>
+                {chatPanelOpen && (
+                  <div className="border-t border-slate-100 dark:border-[#2e2820] px-5 pb-5 pt-4 space-y-4">
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-slate-500 dark:text-[#9a8f87]">Приветственное сообщение</label>
+                      <p className="mb-1.5 text-[11px] text-slate-400 dark:text-[#6a5f57]">Всплывает рядом с кнопкой чата, чтобы привлечь внимание. Пусто — не показывать.</p>
+                      <div className="flex gap-2">
+                        <input
+                          value={chatWelcome}
+                          onChange={(e) => setChatWelcome(e.target.value)}
+                          placeholder="Здравствуйте! Есть вопросы — пишите, ответим здесь"
+                          className="flex-1 rounded-xl border border-slate-200 dark:border-[#3a312a] bg-white dark:bg-[#1f1c16] px-3 py-2 text-sm focus:border-[#0d5a52] focus:outline-none"
+                        />
+                        <button
+                          onClick={() => saveWorkspaceField({ chat_widget_welcome: chatWelcome })}
+                          disabled={savingText}
+                          className="shrink-0 rounded-xl bg-[#0d5a52] px-3 py-2 text-xs font-bold text-white hover:bg-[#0a4840] disabled:opacity-50"
+                        >
+                          {savingText ? '…' : '✓'}
+                        </button>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-slate-500 dark:text-[#9a8f87]">Задержка появления, сек</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="number"
+                          min={0}
+                          max={120}
+                          value={chatDelaySeconds}
+                          onChange={(e) => setChatDelaySeconds(Math.max(0, Number(e.target.value) || 0))}
+                          className="w-28 rounded-xl border border-slate-200 dark:border-[#3a312a] bg-white dark:bg-[#1f1c16] px-3 py-2 text-sm focus:border-[#0d5a52] focus:outline-none"
+                        />
+                        <button
+                          onClick={() => saveWorkspaceField({ chat_widget_delay_seconds: chatDelaySeconds })}
+                          disabled={savingText}
+                          className="shrink-0 rounded-xl bg-[#0d5a52] px-3 py-2 text-xs font-bold text-white hover:bg-[#0a4840] disabled:opacity-50"
+                        >
+                          {savingText ? '…' : '✓'}
+                        </button>
+                      </div>
+                    </div>
+                    <label className="flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-[#9a8f87]">
+                      <input
+                        type="checkbox"
+                        checked={chatAnimations}
+                        onChange={(e) => {
+                          setChatAnimations(e.target.checked)
+                          saveWorkspaceField({ chat_widget_animations: e.target.checked })
+                        }}
+                        className="h-4 w-4 rounded border-slate-300"
+                      />
+                      Анимации (пульсация кнопки, появление)
+                    </label>
                   </div>
                 )}
               </div>

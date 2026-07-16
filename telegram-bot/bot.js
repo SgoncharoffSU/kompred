@@ -2,10 +2,12 @@ require('dotenv').config()
 const fs = require('fs')
 const path = require('path')
 const https = require('https')
+const http = require('http')
 const TelegramBot = require('node-telegram-bot-api')
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN
 const MANAGER_GROUP_CHAT_ID = process.env.MANAGER_GROUP_CHAT_ID
+const SITE_CHAT_PORT = process.env.SITE_CHAT_PORT || 8801
 
 if (!TOKEN) {
   console.error('TELEGRAM_BOT_TOKEN env var not set')
@@ -104,6 +106,95 @@ async function getOrCreateTopic(clientChatId, topicName) {
   return topic.message_thread_id
 }
 
+// Website chat widget visitors aren't real Telegram chats, so they reuse the same
+// per-client Topic mechanism above under a "site:<clientId>" pseudo chat id, and their
+// transcripts (both directions) are kept here instead of being sent back over Telegram.
+const SITE_CHAT_PREFIX = 'site:'
+const SITE_CHATS_FILE = path.join(__dirname, 'site_chats.json')
+
+function loadSiteChats() {
+  try {
+    return JSON.parse(fs.readFileSync(SITE_CHATS_FILE, 'utf8'))
+  } catch {
+    return {}
+  }
+}
+
+function saveSiteChats(map) {
+  fs.writeFileSync(SITE_CHATS_FILE, JSON.stringify(map, null, 2))
+}
+
+let siteChats = loadSiteChats() // { [clientId]: { messages: [{id, from, text, ts}] } }
+
+function appendSiteMessage(clientId, from, text) {
+  if (!siteChats[clientId]) siteChats[clientId] = { messages: [] }
+  const id = siteChats[clientId].messages.length + 1
+  siteChats[clientId].messages.push({ id, from, text, ts: Date.now() })
+  saveSiteChats(siteChats)
+  return id
+}
+
+function jsonBody(req) {
+  return new Promise((resolve, reject) => {
+    let body = ''
+    req.on('data', (d) => (body += d))
+    req.on('end', () => {
+      try {
+        resolve(body ? JSON.parse(body) : {})
+      } catch (e) {
+        reject(e)
+      }
+    })
+    req.on('error', reject)
+  })
+}
+
+const siteChatServer = http.createServer(async (req, res) => {
+  res.setHeader('Content-Type', 'application/json')
+  const url = new URL(req.url, 'http://localhost')
+
+  if (req.method === 'POST' && url.pathname === '/send') {
+    try {
+      const { clientId, name, text } = await jsonBody(req)
+      if (!clientId || !text) {
+        res.writeHead(400)
+        return res.end(JSON.stringify({ ok: false, error: 'clientId and text required' }))
+      }
+      appendSiteMessage(clientId, 'client', text)
+      if (MANAGER_GROUP_CHAT_ID) {
+        const topicId = await getOrCreateTopic(SITE_CHAT_PREFIX + clientId, name || `Сайт (${clientId.slice(0, 8)})`)
+        await bot.sendMessage(MANAGER_GROUP_CHAT_ID, text, { message_thread_id: topicId })
+      }
+      res.writeHead(200)
+      res.end(JSON.stringify({ ok: true }))
+    } catch (e) {
+      console.error('site chat send failed', e.message)
+      res.writeHead(500)
+      res.end(JSON.stringify({ ok: false, error: e.message }))
+    }
+    return
+  }
+
+  if (req.method === 'GET' && url.pathname === '/poll') {
+    const clientId = url.searchParams.get('clientId') || ''
+    const after = parseInt(url.searchParams.get('after') || '0', 10)
+    if (!clientId) {
+      res.writeHead(400)
+      return res.end(JSON.stringify({ ok: false, error: 'clientId required' }))
+    }
+    const chat = siteChats[clientId]
+    const messages = chat ? chat.messages.filter((m) => m.id > after) : []
+    res.writeHead(200)
+    res.end(JSON.stringify({ ok: true, messages }))
+    return
+  }
+
+  res.writeHead(404)
+  res.end(JSON.stringify({ ok: false, error: 'not found' }))
+})
+
+siteChatServer.listen(SITE_CHAT_PORT, '127.0.0.1', () => console.log('Site chat HTTP server listening on 127.0.0.1:' + SITE_CHAT_PORT))
+
 bot.onText(/^\/start\b/, (msg) => {
   if (msg.chat.type !== 'private') return
   bot.sendMessage(msg.chat.id, WELCOME_TEXT).catch((e) => console.error('sendMessage failed', e.message))
@@ -130,6 +221,10 @@ bot.on('message', async (msg) => {
   if (String(msg.chat.id) === String(MANAGER_GROUP_CHAT_ID) && msg.is_topic_message && msg.message_thread_id) {
     const clientChatId = clientsByTopic[String(msg.message_thread_id)]
     if (!clientChatId) return
+    if (clientChatId.startsWith(SITE_CHAT_PREFIX)) {
+      appendSiteMessage(clientChatId.slice(SITE_CHAT_PREFIX.length), 'manager', msg.text)
+      return
+    }
     bot.sendMessage(clientChatId, msg.text).catch((e) => console.error('reply to client failed', e.message))
   }
 })

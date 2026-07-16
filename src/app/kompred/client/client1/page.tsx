@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Yeseva_One } from 'next/font/google'
 import { ThemeToggle } from '@/components/ThemeProvider'
 import { HeaderContactIcons } from '@/components/HeaderContactIcons'
+import { SiteChatWidget } from '@/components/SiteChatWidget'
 
 const brandFont = Yeseva_One({ subsets: ['cyrillic', 'latin'], weight: '400', display: 'swap' })
 
@@ -126,7 +127,16 @@ function sectionsForModel(sections: InclusionSection[], modelId: string): Inclus
 interface ContactBlock {
   id: string
   title?: string
-  data: { phone?: string; telegram?: string; whatsapp?: string; email?: string; address?: string; note?: string }
+  data: {
+    phone?: string
+    telegram?: string
+    whatsapp?: string
+    email?: string
+    emails?: { label: string; email: string }[]
+    address?: string
+    requisites?: string
+    note?: string
+  }
 }
 
 type PendingConflict = {
@@ -725,6 +735,9 @@ interface DesignProps {
   popupBlocks: PopupBlock[]
   onOpenPopup: (groupId: string) => void
   contactBlocks: ContactBlock[]
+  chatWelcome: string
+  chatDelaySeconds: number
+  chatAnimations: boolean
   selectedOptionChoices: Record<string, PopupChoice>
   onOptionChoiceSelect: (optionId: string, choice: PopupChoice) => void
 }
@@ -734,6 +747,9 @@ type RenderRow = { kind: 'options'; groups: ClientGroup[] } | { kind: 'popup' | 
 function ClassicDesign(props: DesignProps) {
   const {
     workspaceName,
+    chatWelcome,
+    chatDelaySeconds,
+    chatAnimations,
     pageTitle,
     pageSubtitle,
     ctaText,
@@ -1795,6 +1811,12 @@ function ClassicDesign(props: DesignProps) {
           </div>
         </div>
       )}
+      <SiteChatWidget
+        workspaceName={workspaceName}
+        welcomeMessage={chatWelcome}
+        appearDelaySeconds={chatDelaySeconds}
+        animationsEnabled={chatAnimations}
+      />
     </>
   )
 }
@@ -1812,6 +1834,9 @@ export default function ClientPage() {
   const [deliveryKm, setDeliveryKmState] = useState<Record<string, string>>({})
   const [popupBlocks, setPopupBlocks] = useState<PopupBlock[]>([])
   const [contactBlocks, setContactBlocks] = useState<ContactBlock[]>([])
+  const [chatWelcome, setChatWelcome] = useState('')
+  const [chatDelaySeconds, setChatDelaySeconds] = useState(8)
+  const [chatAnimations, setChatAnimations] = useState(true)
   const [publishedModelIds, setPublishedModelIds] = useState<string[] | null>(null)
   const [clientDesign, setClientDesign] = useState<'classic' | 'modern' | 'minimal'>('classic')
 
@@ -1876,6 +1901,9 @@ export default function ClientPage() {
         if (data.delivery_configs) setDeliveryConfigs(data.delivery_configs)
         if (Array.isArray(data.popup_blocks)) setPopupBlocks(data.popup_blocks)
         if (Array.isArray(data.contact_blocks)) setContactBlocks(data.contact_blocks)
+        if (data.chat_widget_welcome) setChatWelcome(data.chat_widget_welcome)
+        if (typeof data.chat_widget_delay_seconds === 'number') setChatDelaySeconds(data.chat_widget_delay_seconds)
+        if (typeof data.chat_widget_animations === 'boolean') setChatAnimations(data.chat_widget_animations)
         setPublishedModelIds(data.published_model_ids ?? null)
       })
   }, [])
@@ -2291,6 +2319,9 @@ export default function ClientPage() {
 
   const designProps: DesignProps = {
     workspaceName,
+    chatWelcome,
+    chatDelaySeconds,
+    chatAnimations,
     pageTitle,
     pageSubtitle,
     ctaText,

@@ -62,6 +62,7 @@ const config: Config = {
       animation: {
         'fade-in': 'fadeIn 0.25s ease-out',
         'slide-up': 'slideUp 0.3s ease-out',
+        'soft-ping': 'softPing 2.6s cubic-bezier(0,0,0.2,1) infinite',
       },
       keyframes: {
         fadeIn: {
@@ -71,6 +72,10 @@ const config: Config = {
         slideUp: {
           from: { opacity: '0', transform: 'translateY(8px)' },
           to: { opacity: '1', transform: 'translateY(0)' },
+        },
+        softPing: {
+          '0%': { transform: 'scale(1)', opacity: '0.45' },
+          '70%, 100%': { transform: 'scale(1.7)', opacity: '0' },
         },
       },
     },

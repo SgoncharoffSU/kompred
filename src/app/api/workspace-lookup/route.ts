@@ -20,6 +20,9 @@ export async function GET(req: NextRequest) {
       delivery_configs: {},
       popup_blocks: [],
       contact_blocks: [],
+      chat_widget_welcome: '',
+      chat_widget_delay_seconds: 8,
+      chat_widget_animations: true,
       published_model_ids: null,
     })
   }
@@ -51,6 +54,9 @@ export async function GET(req: NextRequest) {
     delivery_configs: workspace?.delivery_configs || {},
     popup_blocks: popupBlocks,
     contact_blocks: workspace?.contact_blocks ?? [],
+    chat_widget_welcome: workspace?.chat_widget_welcome || '',
+    chat_widget_delay_seconds: workspace?.chat_widget_delay_seconds ?? 8,
+    chat_widget_animations: workspace?.chat_widget_animations ?? true,
     published_model_ids: workspace?.published_model_ids ?? null,
   })
 }

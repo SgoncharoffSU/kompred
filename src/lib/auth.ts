@@ -20,6 +20,9 @@ export interface Workspace {
   popup_blocks?: unknown[]
   inclusion_sections?: unknown[]
   contact_blocks?: unknown[]
+  chat_widget_welcome?: string
+  chat_widget_delay_seconds?: number
+  chat_widget_animations?: boolean
   published_model_ids?: string[] | null
   paid_until?: string
   trial_expires_at?: string
