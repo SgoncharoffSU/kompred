@@ -1547,6 +1547,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'create_calculation') {
     json_out(array('ok' => true, 'id' => $db->insert_id, 'public_slug' => $slug));
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'request_callback') {
+    $body = json_decode(file_get_contents('php://input'), true);
+    if (!$body) json_out(array('ok' => false, 'error' => 'invalid json'));
+    $phone = isset($body['phone']) ? trim(strval($body['phone'])) : '';
+    if ($phone === '') json_out(array('ok' => false, 'error' => 'phone required'));
+    $site = isset($body['workspace_name']) ? trim(strval($body['workspace_name'])) : '';
+    $text = "📞 Заявка на обратный звонок\nТелефон: " . $phone . ($site !== '' ? "\nСайт: " . $site : '');
+    telegram_notify_managers($text);
+    json_out(array('ok' => true));
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'get_calculation') {
     $slug = isset($_GET['slug']) ? trim($_GET['slug']) : '';
     if (!$slug) json_out(array('ok' => false, 'error' => 'slug required'));
