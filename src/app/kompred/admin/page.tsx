@@ -3033,12 +3033,13 @@ export default function AdminPage() {
                         crop={parseCropSafe(selectedModel.image_crop)}
                         alt={selectedModel.name}
                         onReposition={(x, y) => setModelImage(selectedModel.image_url, { x, y, w: 100, h: 100, mode: 'position' })}
-                        onChangePicker={() => openMediaPicker((url, crop) => setModelImage(url, crop ?? null), true)}
+                        onChangePicker={() => openMediaPicker((url, crop) => setModelImage(url, crop ?? null), true, '1/1')}
                         onCropEditor={() =>
                           setCropEditorState({
                             open: true,
                             imageUrl: selectedModel.image_url,
                             initialCrop: parseCropSafe(selectedModel.image_crop),
+                            aspect: '1/1',
                             onConfirm: (crop) => {
                               setModelImage(selectedModel.image_url, crop)
                               setCropEditorState({ open: false, imageUrl: '' })
