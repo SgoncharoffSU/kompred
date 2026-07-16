@@ -206,14 +206,7 @@ export default async function OfferPage({ params }: { params: { slug: string } }
             <img src="/logo-siberia.svg" alt={workspaceName || 'СК Сибирия'} className="h-8 w-auto" />
             <span className={`${brandFont.className} text-xl leading-none tracking-wide text-[#0d5a52]`}>{workspaceName || 'СК СИБЕРИЯ'}</span>
           </div>
-          {headerTelegramHref && (
-            <a href={headerTelegramHref} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-sm font-semibold text-[#0d5a52]">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.248-1.97 9.286c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.871 4.326-2.962-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.833.935z" />
-              </svg>
-              Написать в Telegram
-            </a>
-          )}
+          <HeaderContactIcons telegramHref={headerTelegramHref} phone={headerPhone} wid={phpWorkspaceId} workspaceName={workspaceName} />
         </div>
 
         {/* Hero photo */}
