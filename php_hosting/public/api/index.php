@@ -21,6 +21,22 @@ function media_storage_dir() {
     return realpath(__DIR__ . '/../uploads') ?: (__DIR__ . '/../uploads');
 }
 
+// The VPS this runs on has no working outbound IPv6 route, and curl tries it first and
+// hangs unless forced to IPv4 (same root cause as the Telegram bot's polling_error fix).
+function telegram_notify_managers($text) {
+    if (!defined('TELEGRAM_BOT_TOKEN') || !defined('TELEGRAM_MANAGER_GROUP_ID')) return false;
+    $ch = curl_init('https://api.telegram.org/bot' . TELEGRAM_BOT_TOKEN . '/sendMessage');
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(array('chat_id' => TELEGRAM_MANAGER_GROUP_ID, 'text' => $text)));
+    curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type: application/json'));
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 8);
+    curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+    curl_exec($ch);
+    curl_close($ch);
+    return true;
+}
+
 // mysqlnd returns native int/float types for prepared-statement results (get_result()) but
 // strings for plain query() — the whole frontend was built against the old query()-everywhere
 // behavior (ids compared with ===), so every prepared-statement row handed back to the client
