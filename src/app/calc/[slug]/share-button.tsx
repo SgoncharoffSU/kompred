@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 
-export function ShareButton({ title }: { title: string }) {
+export function ShareButton({ title, className }: { title: string; className?: string }) {
   const [copied, setCopied] = useState(false)
 
   const handleShare = async () => {
