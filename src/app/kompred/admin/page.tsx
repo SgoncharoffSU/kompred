@@ -3271,6 +3271,7 @@ export default function AdminPage() {
           onConfirm={(crop) => cropEditorState.onConfirm?.(crop)}
           onCancel={() => setCropEditorState({ open: false, imageUrl: '' })}
           onSkipCrop={cropEditorState.onSkipCrop}
+          aspect={cropEditorState.aspect}
         />
       )}
 
