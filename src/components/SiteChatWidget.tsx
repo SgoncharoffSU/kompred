@@ -50,6 +50,8 @@ export function SiteChatWidget({
   animationsEnabled = true,
   showFrom,
   showUntil,
+  open: openProp,
+  onOpenChange,
 }: {
   workspaceName?: string | null
   welcomeMessage?: string | null
@@ -57,10 +59,20 @@ export function SiteChatWidget({
   animationsEnabled?: boolean
   showFrom?: string | null
   showUntil?: string | null
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }) {
   const [withinWindow, setWithinWindow] = useState(() => isWithinShowWindow(showFrom || undefined, showUntil || undefined))
   const [delayElapsed, setDelayElapsed] = useState(appearDelaySeconds <= 0)
-  const [open, setOpen] = useState(false)
+  const [openState, setOpenState] = useState(false)
+  // Uncontrolled by default (client1's floating-only usage); the offer page controls it
+  // externally so a "chat" icon in its contacts row can open the same panel.
+  const open = openProp !== undefined ? openProp : openState
+  const setOpen = (value: boolean | ((prev: boolean) => boolean)) => {
+    const next = typeof value === 'function' ? (value as (prev: boolean) => boolean)(open) : value
+    onOpenChange?.(next)
+    if (openProp === undefined) setOpenState(next)
+  }
   const [showGreeting, setShowGreeting] = useState(false)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
