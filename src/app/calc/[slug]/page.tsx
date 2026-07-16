@@ -215,12 +215,13 @@ export default async function OfferPage({ params }: { params: { slug: string } }
     <main className="min-h-screen bg-[#f2ece4] px-4 py-8 md:px-8">
       <div className="mx-auto max-w-2xl space-y-4">
 
-        {/* Brand mark */}
-        <div className="mb-2 flex items-center justify-between gap-2 px-1">
+        {/* Brand mark — sticky so the TG/call icons stay reachable while scrolling through a
+            long offer, print:static since a sticky position is meaningless on paper/PDF */}
+        <div className="print:static sticky top-0 z-40 -mx-4 mb-2 flex items-center justify-between gap-2 border-b border-[#e0d5c9]/70 bg-[#f2ece4]/95 px-5 py-2.5 backdrop-blur-sm md:-mx-8 md:px-9">
           <div className="flex items-center gap-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo-siberia.svg" alt={workspaceName || 'СК Сибирия'} className="h-8 w-auto" />
-            <span className={`${brandFont.className} text-xl leading-none tracking-wide text-[#0d5a52]`}>{workspaceName || 'СК СИБЕРИЯ'}</span>
+            <img src="/logo-siberia.svg" alt={workspaceName || 'СК Сибирия'} className="h-10 w-auto" />
+            <span className={`${brandFont.className} text-2xl leading-none tracking-wide text-[#0d5a52]`}>{workspaceName || 'СК СИБЕРИЯ'}</span>
           </div>
           <HeaderContactIcons telegramHref={headerTelegramHref} phone={headerPhone} wid={phpWorkspaceId} workspaceName={workspaceName} />
         </div>
