@@ -1837,6 +1837,8 @@ export default function ClientPage() {
   const [chatWelcome, setChatWelcome] = useState('')
   const [chatDelaySeconds, setChatDelaySeconds] = useState(8)
   const [chatAnimations, setChatAnimations] = useState(true)
+  const [chatShowFrom, setChatShowFrom] = useState('')
+  const [chatShowUntil, setChatShowUntil] = useState('')
   const [publishedModelIds, setPublishedModelIds] = useState<string[] | null>(null)
   const [clientDesign, setClientDesign] = useState<'classic' | 'modern' | 'minimal'>('classic')
 
@@ -1904,6 +1906,8 @@ export default function ClientPage() {
         if (data.chat_widget_welcome) setChatWelcome(data.chat_widget_welcome)
         if (typeof data.chat_widget_delay_seconds === 'number') setChatDelaySeconds(data.chat_widget_delay_seconds)
         if (typeof data.chat_widget_animations === 'boolean') setChatAnimations(data.chat_widget_animations)
+        if (data.chat_widget_show_from) setChatShowFrom(data.chat_widget_show_from)
+        if (data.chat_widget_show_until) setChatShowUntil(data.chat_widget_show_until)
         setPublishedModelIds(data.published_model_ids ?? null)
       })
   }, [])

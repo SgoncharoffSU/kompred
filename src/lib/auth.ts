@@ -23,6 +23,8 @@ export interface Workspace {
   chat_widget_welcome?: string
   chat_widget_delay_seconds?: number
   chat_widget_animations?: boolean
+  chat_widget_show_from?: string
+  chat_widget_show_until?: string
   published_model_ids?: string[] | null
   paid_until?: string
   trial_expires_at?: string

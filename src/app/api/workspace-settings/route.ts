@@ -34,6 +34,8 @@ export async function GET(req: NextRequest) {
     chat_widget_welcome: workspace?.chat_widget_welcome || '',
     chat_widget_delay_seconds: workspace?.chat_widget_delay_seconds ?? 8,
     chat_widget_animations: workspace?.chat_widget_animations ?? true,
+    chat_widget_show_from: workspace?.chat_widget_show_from || '',
+    chat_widget_show_until: workspace?.chat_widget_show_until || '',
     published_model_ids: workspace?.published_model_ids ?? null,
   })
 }
@@ -69,6 +71,8 @@ export async function PUT(req: NextRequest) {
   if (typeof body.chat_widget_welcome === 'string') updates.chat_widget_welcome = body.chat_widget_welcome
   if (typeof body.chat_widget_delay_seconds === 'number') updates.chat_widget_delay_seconds = body.chat_widget_delay_seconds
   if (typeof body.chat_widget_animations === 'boolean') updates.chat_widget_animations = body.chat_widget_animations
+  if (typeof body.chat_widget_show_from === 'string') updates.chat_widget_show_from = body.chat_widget_show_from
+  if (typeof body.chat_widget_show_until === 'string') updates.chat_widget_show_until = body.chat_widget_show_until
   if (body.published_model_ids === null || Array.isArray(body.published_model_ids)) {
     updates.published_model_ids = body.published_model_ids
   }

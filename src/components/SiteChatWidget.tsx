@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 
-type ChatMessage = { id: number; from: 'client' | 'manager'; text: string; ts: number }
+type ChatMessage = { id: number; from: 'client' | 'manager'; text: string; ts: number; status?: 'sending' | 'sent' | 'failed' }
 
 const CLIENT_ID_KEY = 'bh_chat_client_id'
 const GREETING_DISMISSED_KEY = 'bh_chat_greeting_dismissed'
@@ -14,6 +14,25 @@ function getClientId(): string {
     localStorage.setItem(CLIENT_ID_KEY, id)
   }
   return id
+}
+
+// Business hours are configured in Moscow time regardless of the visitor's or the
+// server's own timezone/clock — same class of bug as the offer page's date formatting
+// (server runs on UTC, naive comparisons drift up to 3h), so this always reads the
+// wall-clock time via the Europe/Moscow timezone explicitly rather than trusting
+// Date's local getHours()/getMinutes().
+function isWithinShowWindow(from?: string, until?: string): boolean {
+  if (!from || !until) return true
+  const parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Moscow', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(new Date())
+  const hh = Number(parts.find((p) => p.type === 'hour')?.value ?? '0')
+  const mm = Number(parts.find((p) => p.type === 'minute')?.value ?? '0')
+  const nowMinutes = hh * 60 + mm
+  const [fh, fm] = from.split(':').map(Number)
+  const [uh, um] = until.split(':').map(Number)
+  const fromMinutes = fh * 60 + (fm || 0)
+  const untilMinutes = uh * 60 + (um || 0)
+  if (fromMinutes <= untilMinutes) return nowMinutes >= fromMinutes && nowMinutes < untilMinutes
+  return nowMinutes >= fromMinutes || nowMinutes < untilMinutes // overnight window, e.g. 21:00-09:00
 }
 
 function ChatBubbleIcon() {
@@ -29,13 +48,18 @@ export function SiteChatWidget({
   welcomeMessage,
   appearDelaySeconds = 8,
   animationsEnabled = true,
+  showFrom,
+  showUntil,
 }: {
   workspaceName?: string | null
   welcomeMessage?: string | null
   appearDelaySeconds?: number
   animationsEnabled?: boolean
+  showFrom?: string | null
+  showUntil?: string | null
 }) {
-  const [visible, setVisible] = useState(appearDelaySeconds <= 0)
+  const [withinWindow, setWithinWindow] = useState(() => isWithinShowWindow(showFrom || undefined, showUntil || undefined))
+  const [delayElapsed, setDelayElapsed] = useState(appearDelaySeconds <= 0)
   const [open, setOpen] = useState(false)
   const [showGreeting, setShowGreeting] = useState(false)
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -53,10 +77,19 @@ export function SiteChatWidget({
   }, [])
 
   useEffect(() => {
-    if (visible) return
-    const t = setTimeout(() => setVisible(true), appearDelaySeconds * 1000)
+    const check = () => setWithinWindow(isWithinShowWindow(showFrom || undefined, showUntil || undefined))
+    check()
+    const interval = setInterval(check, 60000)
+    return () => clearInterval(interval)
+  }, [showFrom, showUntil])
+
+  useEffect(() => {
+    if (delayElapsed) return
+    const t = setTimeout(() => setDelayElapsed(true), appearDelaySeconds * 1000)
     return () => clearTimeout(t)
-  }, [visible, appearDelaySeconds])
+  }, [delayElapsed, appearDelaySeconds])
+
+  const visible = withinWindow && delayElapsed
 
   useEffect(() => {
     if (!visible || !welcomeMessage || !welcomeMessage.trim()) return
@@ -78,6 +111,7 @@ export function SiteChatWidget({
   }
 
   useEffect(() => {
+    if (!visible) return
     const poll = async () => {
       if (!clientIdRef.current) return
       try {
@@ -98,7 +132,7 @@ export function SiteChatWidget({
     poll()
     const interval = setInterval(poll, 4000)
     return () => clearInterval(interval)
-  }, [])
+  }, [visible])
 
   useEffect(() => {
     if (open) {
@@ -107,22 +141,43 @@ export function SiteChatWidget({
     }
   }, [open, messages])
 
+  // Mobile browsers (seen with Yandex Browser) can silently fail this fetch — the previous
+  // version swallowed the error and left the message looking "sent" with no way to tell it
+  // never reached the manager. Now every message tracks its own delivery status so a failure
+  // is visible and retryable instead of invisible.
+  const deliver = async (id: number, text: string) => {
+    setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, status: 'sending' } : m)))
+    try {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 10000)
+      const res = await fetch('/api/site-chat/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId: clientIdRef.current, name: workspaceName ? `Сайт: ${workspaceName}` : 'Сайт', text }),
+        keepalive: true,
+        signal: controller.signal,
+      })
+      clearTimeout(timeout)
+      const data = await res.json().catch(() => null)
+      setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, status: res.ok && data?.ok ? 'sent' : 'failed' } : m)))
+    } catch {
+      setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, status: 'failed' } : m)))
+    }
+  }
+
   const send = async () => {
     const text = input.trim()
     if (!text || sending || !clientIdRef.current) return
     setSending(true)
     setInput('')
-    setMessages((prev) => [...prev, { id: -Date.now(), from: 'client', text, ts: Date.now() }])
-    try {
-      await fetch('/api/site-chat/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clientId: clientIdRef.current, name: workspaceName ? `Сайт: ${workspaceName}` : 'Сайт', text }),
-      })
-    } catch {
-      // the message stays visible optimistically; a retry affordance isn't worth the complexity here
-    }
+    const id = -Date.now()
+    setMessages((prev) => [...prev, { id, from: 'client', text, ts: Date.now(), status: 'sending' }])
+    await deliver(id, text)
     setSending(false)
+  }
+
+  const retry = (m: ChatMessage) => {
+    deliver(m.id, m.text)
   }
 
   if (!visible) return null
@@ -152,14 +207,19 @@ export function SiteChatWidget({
               <div className="mt-8 text-center text-xs text-[#7a6f66] dark:text-[#9a8f87]">Напишите нам, и менеджер ответит здесь</div>
             )}
             {messages.map((m) => (
-              <div key={m.id} className={`flex ${m.from === 'client' ? 'justify-end' : 'justify-start'}`}>
+              <div key={m.id} className={`flex flex-col ${m.from === 'client' ? 'items-end' : 'items-start'}`}>
                 <div
                   className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm ${
                     m.from === 'client' ? 'bg-[#0d5a52] text-white' : 'bg-[#f2ece4] text-[#3a3128] dark:bg-[#1c1a16] dark:text-[#d5cfc7]'
-                  }`}
+                  } ${m.status === 'failed' ? 'opacity-60' : ''}`}
                 >
                   {m.text}
                 </div>
+                {m.status === 'failed' && (
+                  <button type="button" onClick={() => retry(m)} className="mt-0.5 text-[11px] font-medium text-red-500 hover:underline">
+                    Не отправлено — повторить
+                  </button>
+                )}
               </div>
             ))}
           </div>
