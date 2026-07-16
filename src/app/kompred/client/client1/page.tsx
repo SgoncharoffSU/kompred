@@ -139,6 +139,36 @@ interface ContactBlock {
   }
 }
 
+// Shared icon-button-with-dropdown used by the "Наши контакты" card for email/map/requisites —
+// same visual language as HeaderContactIcons' phone dropdown, but generic content instead of a
+// fixed call/callback menu.
+function IconPopoverButton({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        title={title}
+        onClick={() => setOpen((o) => !o)}
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#0d5a52]/10 dark:bg-[#0d5a52]/20 text-[#0d5a52] transition-colors hover:bg-[#0d5a52] hover:text-white"
+      >
+        {icon}
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div
+            className="absolute left-0 top-full z-50 mt-2 w-64 overflow-hidden rounded-xl border border-[#e0d5c9] bg-white p-3 shadow-lg dark:border-[#38322a] dark:bg-[#252119]"
+            onClick={() => setOpen(false)}
+          >
+            {children}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 type PendingConflict = {
   optionId: string
   groupId: string
