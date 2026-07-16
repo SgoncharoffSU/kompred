@@ -3351,6 +3351,45 @@ export default function AdminPage() {
                         </button>
                       </div>
                     </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-slate-500 dark:text-[#9a8f87]">Время показа чата (по МСК)</label>
+                      <p className="mb-1.5 text-[11px] text-slate-400 dark:text-[#6a5f57]">Вне этого окна кнопка чата на сайте не показывается. Пусто — показывать всегда.</p>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="time"
+                          value={chatShowFrom}
+                          onChange={(e) => setChatShowFrom(e.target.value)}
+                          className="rounded-xl border border-slate-200 dark:border-[#3a312a] bg-white dark:bg-[#1f1c16] px-3 py-2 text-sm focus:border-[#0d5a52] focus:outline-none"
+                        />
+                        <span className="text-xs text-slate-400 dark:text-[#6a5f57]">—</span>
+                        <input
+                          type="time"
+                          value={chatShowUntil}
+                          onChange={(e) => setChatShowUntil(e.target.value)}
+                          className="rounded-xl border border-slate-200 dark:border-[#3a312a] bg-white dark:bg-[#1f1c16] px-3 py-2 text-sm focus:border-[#0d5a52] focus:outline-none"
+                        />
+                        <button
+                          onClick={() => saveWorkspaceField({ chat_widget_show_from: chatShowFrom, chat_widget_show_until: chatShowUntil })}
+                          disabled={savingText}
+                          className="shrink-0 rounded-xl bg-[#0d5a52] px-3 py-2 text-xs font-bold text-white hover:bg-[#0a4840] disabled:opacity-50"
+                        >
+                          {savingText ? '…' : '✓'}
+                        </button>
+                        {(chatShowFrom || chatShowUntil) && (
+                          <button
+                            onClick={() => {
+                              setChatShowFrom('')
+                              setChatShowUntil('')
+                              saveWorkspaceField({ chat_widget_show_from: '', chat_widget_show_until: '' })
+                            }}
+                            disabled={savingText}
+                            className="shrink-0 rounded-xl border border-slate-200 dark:border-[#3a312a] px-2.5 py-2 text-xs text-slate-500 dark:text-[#9a8f87] hover:bg-slate-50 dark:hover:bg-[#1f1c16]"
+                          >
+                            Сбросить
+                          </button>
+                        )}
+                      </div>
+                    </div>
                     <label className="flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-[#9a8f87]">
                       <input
                         type="checkbox"
