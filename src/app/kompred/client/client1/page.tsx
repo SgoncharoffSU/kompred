@@ -985,7 +985,8 @@ function ClassicDesign(props: DesignProps) {
     )
   })
 
-  const headerPhone = visibleContactBlocks.find((b) => b.data.phone)?.data.phone
+  const headerTelegram = visibleContactBlocks.find((b) => b.data.telegram)?.data.telegram
+  const headerTelegramHref = headerTelegram ? (headerTelegram.startsWith('http') ? headerTelegram : `https://t.me/${headerTelegram.replace(/^@/, '')}`) : null
 
   return (
     <>
@@ -993,15 +994,17 @@ function ClassicDesign(props: DesignProps) {
         <header className="relative shrink-0 z-40 border-b border-[#e0d5c9] dark:border-[#38322a] bg-white/90 dark:bg-[#252119]/90 backdrop-blur-sm">
           <div className="mx-auto flex max-w-[1280px] items-center justify-end gap-4 px-4 py-2 md:px-8">
             <div className="flex items-center gap-3">
-              {headerPhone && (
+              {headerTelegramHref && (
                 <a
-                  href={`tel:${headerPhone.replace(/\s/g, '')}`}
+                  href={headerTelegramHref}
+                  target="_blank"
+                  rel="noreferrer"
                   className="flex items-center gap-1.5 text-sm font-semibold text-[#0d5a52] dark:text-[#4db8ae] hover:text-[#0a453f] dark:hover:text-[#5fcabf]"
                 >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M22 16.92v3a2 2 0 0 1-2.18 2A19.79 19.79 0 0 1 11.39 19a19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" />
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.248-1.97 9.286c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.871 4.326-2.962-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.833.935z" />
                   </svg>
-                  {headerPhone}
+                  Написать в Telegram
                 </a>
               )}
               <ThemeToggle />
