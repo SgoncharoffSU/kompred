@@ -1023,7 +1023,7 @@ function ClassicDesign(props: DesignProps) {
     <>
       <main className="h-screen flex flex-col bg-[#f2ece4] dark:bg-[#1c1a16]">
         <header className="relative shrink-0 z-40 border-b border-[#e0d5c9] dark:border-[#38322a] bg-white/90 dark:bg-[#252119]/90 backdrop-blur-sm">
-          <div className="mx-auto flex max-w-[1280px] items-center justify-end gap-4 px-4 py-2 md:px-8">
+          <div className="mx-auto flex max-w-[1280px] items-center justify-end gap-4 px-4 py-1 md:px-8">
             <div className="flex items-center gap-3">
               <HeaderContactIcons telegramHref={headerTelegramHref} phone={headerPhone} onRequestCallback={headerPhone ? handleRequestCallback : undefined} />
               <ThemeToggle />
@@ -1033,7 +1033,7 @@ function ClassicDesign(props: DesignProps) {
               its own full-width row in normal flow instead of hanging (overlapping) below the
               header — that overlap trick is what caused it to collide with the TG/phone icons
               on narrow screens. At lg+ there's room, so it reverts to the original hang-below-header layout. */}
-          <div className="flex items-center gap-3 px-4 pb-3 lg:absolute lg:left-8 lg:top-full lg:z-50 lg:-translate-y-1/2 lg:px-0 lg:pb-0">
+          <div className="flex items-center gap-3 px-4 pb-1 lg:absolute lg:left-8 lg:top-full lg:z-50 lg:-translate-y-1/2 lg:px-0 lg:pb-0">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/logo-siberia.svg" alt={workspaceName || 'СК Сибирия'} className="h-20 w-auto drop-shadow-[0_1px_3px_rgba(255,255,255,0.5)]" />
             <span
