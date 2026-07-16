@@ -1488,6 +1488,7 @@ export default function AdminPage() {
   const [chatShowFrom, setChatShowFrom] = useState('')
   const [chatShowUntil, setChatShowUntil] = useState('')
   const [chatPanelOpen, setChatPanelOpen] = useState(false)
+  const [newEmailDraft, setNewEmailDraft] = useState<Record<string, { label: string; email: string }>>({})
 
   const [deliveryConfigs, setDeliveryConfigs] = useState<Record<string, DeliveryConfig>>({})
   const [popupBlocks, setPopupBlocks] = useState<PopupBlock[]>([])
