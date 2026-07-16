@@ -161,11 +161,14 @@ function formatDate(dateStr: string) {
 
 export default async function OfferPage({ params }: { params: { slug: string } }) {
   const offer = await getCalculation(params.slug)
-  const workspaceInfo = offer?.account ? await getWorkspaceInfo(offer.account) : { contactBlocks: [], workspaceName: '', popupBlocks: [] }
-  const { contactBlocks, workspaceName, popupBlocks } = workspaceInfo
+  const workspaceInfo = offer?.account
+    ? await getWorkspaceInfo(offer.account)
+    : { contactBlocks: [], workspaceName: '', popupBlocks: [], phpWorkspaceId: null }
+  const { contactBlocks, workspaceName, popupBlocks, phpWorkspaceId } = workspaceInfo
   const hasContactInfo = contactBlocks.some((b) => b.data.phone || b.data.email || b.data.address || b.data.telegram || b.data.whatsapp)
   const headerTelegram = contactBlocks.find((b) => b.data.telegram)?.data.telegram
   const headerTelegramHref = headerTelegram ? (headerTelegram.startsWith('http') ? headerTelegram : `https://t.me/${headerTelegram.replace(/^@/, '')}`) : null
+  const headerPhone = contactBlocks.find((b) => b.data.phone)?.data.phone
   const editUrl = offer?.account ? `/cli${offer.account}${offer.model_id ? `?model=${offer.model_id}` : ''}` : null
   // A popup block can be duplicated and re-scoped to different models via the group's own
   // model_ids — only the block(s) actually allowed for this offer's model should render, or
