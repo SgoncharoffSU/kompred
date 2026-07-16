@@ -1,5 +1,6 @@
 <?php
 require __DIR__ . '/db.php';
+require __DIR__ . '/telegram_config.php';
 
 $db = db_connect();
 $action = isset($_GET['action']) ? $_GET['action'] : '';
