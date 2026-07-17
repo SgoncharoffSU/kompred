@@ -37,6 +37,7 @@ export async function GET(req: NextRequest) {
     chat_widget_show_from: workspace?.chat_widget_show_from || '',
     chat_widget_show_until: workspace?.chat_widget_show_until || '',
     published_model_ids: workspace?.published_model_ids ?? null,
+    share_slogan: workspace?.share_slogan || '',
   })
 }
 
@@ -76,6 +77,7 @@ export async function PUT(req: NextRequest) {
   if (body.published_model_ids === null || Array.isArray(body.published_model_ids)) {
     updates.published_model_ids = body.published_model_ids
   }
+  if (typeof body.share_slogan === 'string') updates.share_slogan = body.share_slogan
 
   updateWorkspace(user.workspace_id, updates)
   return NextResponse.json({ ok: true })

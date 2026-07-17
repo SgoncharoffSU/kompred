@@ -1483,6 +1483,7 @@ export default function AdminPage() {
   const [groupTexts, setGroupTexts] = useState<Record<string, string>>({})
   const [savingText, setSavingText] = useState(false)
   const [textsPanelOpen, setTextsPanelOpen] = useState(false)
+  const [shareSlogan, setShareSlogan] = useState('')
 
   const [chatWelcome, setChatWelcome] = useState('')
   const [chatDelaySeconds, setChatDelaySeconds] = useState(8)
@@ -1558,6 +1559,7 @@ export default function AdminPage() {
         if (d.chat_widget_show_from !== undefined) setChatShowFrom(d.chat_widget_show_from)
         if (d.chat_widget_show_until !== undefined) setChatShowUntil(d.chat_widget_show_until)
         setPublishedModelIds(d.published_model_ids ?? null)
+        if (d.share_slogan !== undefined) setShareSlogan(d.share_slogan)
       })
     fetch('/api/auth/me')
       .then((r) => r.json())
@@ -3380,6 +3382,7 @@ export default function AdminPage() {
                       { key: 'page_subtitle', label: 'Подзаголовок / описание', value: pageSubtitle, set: setPageSubtitle, placeholder: 'Выберите модель, планировку и опции…' },
                       { key: 'cta_text', label: 'Текст кнопки', value: ctaText, set: setCtaText, placeholder: 'Сформировать предложение' },
                       { key: 'offer_note', label: 'Подпись под ссылкой', value: offerNote, set: setOfferNote, placeholder: 'Предложение фиксируется по ссылке и не меняется' },
+                      { key: 'share_slogan', label: 'Слоган для превью ссылки в мессенджерах', value: shareSlogan, set: setShareSlogan, placeholder: 'Баня вашей мечты за 60 секунд' },
                     ].map((f) => (
                       <div key={f.key}>
                         <label className="mb-1 block text-xs font-semibold text-slate-500 dark:text-[#9a8f87]">{f.label}</label>

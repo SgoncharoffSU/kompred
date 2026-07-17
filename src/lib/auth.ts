@@ -28,6 +28,7 @@ export interface Workspace {
   published_model_ids?: string[] | null
   paid_until?: string
   trial_expires_at?: string
+  share_slogan?: string
 }
 
 export interface User {

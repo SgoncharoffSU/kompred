@@ -1019,37 +1019,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'get_layouts') {
     json_out(array('ok' => true, 'layouts' => $rows));
 }
 
-// Powers the messenger link-preview (og:image) for the /cli{N} configurator entry link.
-// A specific model_id wins when the link points at one; otherwise this looks for a model
-// whose name matches the workspace's chosen "flagship" size (currently 4х6 — set by
-// business preference, not a stored flag) before falling back to the first model.
-if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'get_share_preview') {
-    $model_id = intval(isset($_GET['model_id']) ? $_GET['model_id'] : 0);
-    $stmt = $db->prepare('SELECT id, name, image_url, offer_image_crop FROM models WHERE workspace_id=? ORDER BY sort_order ASC, id ASC');
-    $stmt->bind_param('i', $WORKSPACE_ID);
-    $stmt->execute();
-    $models = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-    $chosen = null;
-    if ($model_id > 0) {
-        foreach ($models as $m) {
-            if (intval($m['id']) === $model_id) { $chosen = $m; break; }
-        }
-    }
-    if (!$chosen) {
-        foreach ($models as $m) {
-            if (preg_match('/4[xх]6/ui', $m['name'])) { $chosen = $m; break; }
-        }
-    }
-    if (!$chosen && count($models) > 0) $chosen = $models[0];
-    if (!$chosen) json_out(array('ok' => false, 'error' => 'no models'));
-    json_out(array(
-        'ok' => true,
-        'model_name' => $chosen['name'],
-        'image_url' => $chosen['image_url'],
-        'image_crop' => $chosen['offer_image_crop'],
-    ));
-}
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'create_layout') {
     $data = json_decode(file_get_contents('php://input'), true);
     if (!$data) { parse_str(file_get_contents('php://input'), $data); }

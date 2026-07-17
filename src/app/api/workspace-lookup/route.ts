@@ -26,6 +26,7 @@ export async function GET(req: NextRequest) {
       chat_widget_show_from: '',
       chat_widget_show_until: '',
       published_model_ids: null,
+      share_slogan: '',
     })
   }
 
@@ -62,5 +63,6 @@ export async function GET(req: NextRequest) {
     chat_widget_show_from: workspace?.chat_widget_show_from || '',
     chat_widget_show_until: workspace?.chat_widget_show_until || '',
     published_model_ids: workspace?.published_model_ids ?? null,
+    share_slogan: workspace?.share_slogan || '',
   })
 }
