@@ -25,6 +25,7 @@ interface AdminModel {
   offer_image_crop: string | null
   base_price: string
   sort_order: number
+  gallery_photos: { id: number; image_url: string; image_crop: string | null }[]
 }
 
 interface AdminGroup {
@@ -126,6 +127,7 @@ interface ContactBlock {
     phone?: string
     telegram?: string
     whatsapp?: string
+    max?: string
     email?: string
     emails?: { label: string; email: string }[]
     address?: string
@@ -1705,6 +1707,25 @@ export default function AdminPage() {
     setModels((prev) => prev.map((m) => (m.id === selectedModel.id ? { ...m, offer_image_crop: cropJson } : m)))
   }
 
+  // Extra photos shown as a gallery (with prev/next arrows) on the generated offer page, in
+  // addition to the single main photo above.
+  const addModelGalleryPhoto = async (url: string) => {
+    if (!selectedModel) return
+    const res = await phpPost('add_model_gallery_photo', { model_id: Number(selectedModel.id), image_url: url })
+    if (!res.ok) {
+      alert('Не удалось добавить фото: ' + (res.error || 'ошибка сервера'))
+      return
+    }
+    const newPhoto = { id: Number(res.id), image_url: url, image_crop: null }
+    setModels((prev) => prev.map((m) => (m.id === selectedModel.id ? { ...m, gallery_photos: [...m.gallery_photos, newPhoto] } : m)))
+  }
+
+  const deleteModelGalleryPhoto = async (photoId: number) => {
+    if (!selectedModel) return
+    await phpPost('delete_model_gallery_photo', { id: photoId })
+    setModels((prev) => prev.map((m) => (m.id === selectedModel.id ? { ...m, gallery_photos: m.gallery_photos.filter((p) => p.id !== photoId) } : m)))
+  }
+
   const saveModelEdits = async () => {
     if (!selectedModel) return
     setSavingModel(true)
@@ -1809,17 +1830,17 @@ export default function AdminPage() {
     setGroups((prev) => prev.map((g) => (g.id === groupId ? { ...g, enlarge_photo: next } : g)))
   }
 
-  const toggleOptionActiveForModel = async (optionId: string, currentlyActive: boolean) => {
-    const nextActive = currentlyActive ? 0 : 1
-    await phpPost('toggle_option_active', { option_id: Number(optionId), model_id: Number(selectedModelId), is_active: nextActive })
-    setOptions((prev) =>
-      prev.map((o) => {
-        if (o.id !== optionId) return o
-        const mid = Number(selectedModelId)
-        const nextIds = nextActive === 1 ? [...o.active_model_ids.filter((id) => id !== mid), mid] : o.active_model_ids.filter((id) => id !== mid)
-        return { ...o, active_model_ids: nextIds }
-      })
-    )
+  // Sets the option's full active-model list in one call (set_option_active_models), rather
+  // than toggling only whichever model happens to be selected — lets the checkbox list in the
+  // option editor show/change availability across every model at once instead of requiring
+  // the admin to switch models one at a time.
+  const toggleOptionModelActive = async (optionId: string, modelId: number) => {
+    const option = options.find((o) => o.id === optionId)
+    if (!option) return
+    const current = option.active_model_ids
+    const next = current.includes(modelId) ? current.filter((id) => id !== modelId) : [...current, modelId]
+    await phpPost('set_option_active_models', { option_id: Number(optionId), model_ids: next })
+    setOptions((prev) => prev.map((o) => (o.id === optionId ? { ...o, active_model_ids: next } : o)))
   }
 
   const createBlock = async () => {
@@ -2203,153 +2224,157 @@ export default function AdminPage() {
         <DragHandleRender id={group.id}>
           {(handle) => (
             <div>
-              <div className="flex items-center hover:bg-slate-50 dark:hover:bg-[#2a2520] dark:bg-[#1f1c16] transition-colors">
-                {handle}
-                {mergingMode && depth === 0 && (
+              <div className="hover:bg-slate-50 dark:hover:bg-[#2a2520] dark:bg-[#1f1c16] transition-colors">
+                <div className="flex items-center pt-2.5">
+                  {handle}
+                  {mergingMode && depth === 0 && (
+                    <input
+                      type="checkbox"
+                      checked={mergeSelectedIds.has(group.id)}
+                      onChange={() =>
+                        setMergeSelectedIds((prev) => {
+                          const next = new Set(prev)
+                          next.has(group.id) ? next.delete(group.id) : next.add(group.id)
+                          return next
+                        })
+                      }
+                      onClick={(e) => e.stopPropagation()}
+                      className="ml-3 h-4 w-4 shrink-0 rounded accent-[#0d5a52]"
+                      title="Выбрать для объединения"
+                    />
+                  )}
+                  <button onClick={() => toggleExpanded(group.id)} className="flex items-center gap-3 py-1.5 pl-1 text-left">
+                    <span className={`text-xs text-slate-400 dark:text-[#6a5f57] transition-transform duration-150 ${isOpen ? 'rotate-90' : ''}`}>▶</span>
+                    <span className="text-sm">{blockMeta?.icon ?? '☑️'}</span>
+                  </button>
                   <input
-                    type="checkbox"
-                    checked={mergeSelectedIds.has(group.id)}
-                    onChange={() =>
-                      setMergeSelectedIds((prev) => {
-                        const next = new Set(prev)
-                        next.has(group.id) ? next.delete(group.id) : next.add(group.id)
-                        return next
-                      })
-                    }
+                    value={group.name}
                     onClick={(e) => e.stopPropagation()}
-                    className="ml-3 h-4 w-4 shrink-0 rounded accent-[#0d5a52]"
-                    title="Выбрать для объединения"
+                    onChange={(e) => setGroups((prev) => prev.map((g) => (g.id === group.id ? { ...g, name: e.target.value } : g)))}
+                    onBlur={() => saveGroupName(group.id, group.name)}
+                    onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+                    className="min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 py-1.5 text-sm font-medium text-slate-700 dark:text-[#d5cfc7] focus:border-slate-200 dark:focus:border-[#3a312a] focus:bg-white dark:focus:bg-[#252119] focus:outline-none"
                   />
-                )}
-                <button onClick={() => toggleExpanded(group.id)} className="flex items-center gap-3 py-4 pl-1 text-left">
-                  <span className={`text-xs text-slate-400 dark:text-[#6a5f57] transition-transform duration-150 ${isOpen ? 'rotate-90' : ''}`}>▶</span>
-                  <span className="text-sm">{blockMeta?.icon ?? '☑️'}</span>
-                </button>
-                <input
-                  value={group.name}
-                  onClick={(e) => e.stopPropagation()}
-                  onChange={(e) => setGroups((prev) => prev.map((g) => (g.id === group.id ? { ...g, name: e.target.value } : g)))}
-                  onBlur={() => saveGroupName(group.id, group.name)}
-                  onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-                  className="min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 py-1.5 text-sm font-medium text-slate-700 dark:text-[#d5cfc7] focus:border-slate-200 dark:focus:border-[#3a312a] focus:bg-white dark:focus:bg-[#252119] focus:outline-none"
-                />
-                <span
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    toggleSelectionType(group.id, group.selection_type)
-                  }}
-                  className={`cursor-pointer rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${group.selection_type === 'multiple' ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-amber-100 text-amber-700 hover:bg-amber-200'}`}
-                  title="Нажмите чтобы переключить тип выбора"
-                >
-                  {group.selection_type === 'multiple' ? 'Множественный' : 'Один вариант'}
-                </span>
-                {group.selection_type === 'single' && (
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5 py-2.5 pl-11 pr-3">
                   <span
                     onClick={(e) => {
                       e.stopPropagation()
-                      toggleRequired(group.id, group.required)
+                      toggleSelectionType(group.id, group.selection_type)
                     }}
-                    className={`mr-2 cursor-pointer rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${group.required !== '0' ? 'bg-slate-100 text-slate-500 dark:bg-[#2a2520] dark:text-[#9a8f87] hover:bg-slate-200' : 'bg-sky-100 text-sky-700 hover:bg-sky-200'}`}
-                    title="Нажмите чтобы переключить обязательность выбора в этом блоке"
+                    className={`cursor-pointer rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${group.selection_type === 'multiple' ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-amber-100 text-amber-700 hover:bg-amber-200'}`}
+                    title="Нажмите чтобы переключить тип выбора"
                   >
-                    {group.required !== '0' ? 'Обязательно' : 'Необязательно'}
+                    {group.selection_type === 'multiple' ? 'Множественный' : 'Один вариант'}
                   </span>
-                )}
-                <span
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    toggleEnlargePhoto(group.id, group.enlarge_photo)
-                  }}
-                  className={`mr-2 cursor-pointer rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${group.enlarge_photo === '1' ? 'bg-violet-100 text-violet-700 hover:bg-violet-200' : 'bg-slate-100 text-slate-400 dark:bg-[#2a2520] dark:text-[#6a5f57] hover:bg-slate-200'}`}
-                  title="Разрешить покупателю увеличивать фото опций в этом блоке"
-                >
-                  🔍 {group.enlarge_photo === '1' ? 'Увеличение вкл.' : 'Увеличение выкл.'}
-                </span>
-                <span className="mx-2 rounded-full bg-slate-100 dark:bg-[#2a2520] px-2.5 py-0.5 text-xs text-slate-500 dark:text-[#9a8f87]" title={children.length > 0 ? 'Опций во вложенных блоках' : 'Опций в блоке'}>
-                  {countOptionsIn(group.id)}
-                </span>
-                <div className="relative">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      if (exclusionOpen) {
-                        setGroupExclusionPopover(null)
-                        return
-                      }
-                      const rect = e.currentTarget.getBoundingClientRect()
-                      setGroupExclusionPopover({ type: 'group', id: group.id, anchorTop: rect.top, anchorBottom: rect.bottom, left: rect.right - 256 })
-                    }}
-                    className={`mr-1 rounded-lg px-1.5 py-0.5 text-xs hover:bg-slate-100 dark:hover:bg-[#2a2520] ${exclusionCount > 0 ? 'text-amber-600' : 'text-slate-300 dark:text-[#4a4038]'}`}
-                    title="Взаимоисключения блока"
-                  >
-                    🔀 искл.{exclusionCount > 0 ? ` ${exclusionCount}` : ''}
-                  </button>
-                  {exclusionOpen && groupExclusionPopover && (
-                    <GroupExclusionPopover
-                      group={group}
-                      anchorTop={groupExclusionPopover.anchorTop}
-                      anchorBottom={groupExclusionPopover.anchorBottom}
-                      left={groupExclusionPopover.left}
-                      allItems={allExclusionItems}
-                      isExcluded={(t, id) => isExcludedPair('group', group.id, t, id)}
-                      onToggleExclusion={(t, id) => toggleExclusion('group', group.id, t, id)}
-                      onClose={() => setGroupExclusionPopover(null)}
-                    />
+                  {group.selection_type === 'single' && (
+                    <span
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        toggleRequired(group.id, group.required)
+                      }}
+                      className={`cursor-pointer rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${group.required !== '0' ? 'bg-slate-100 text-slate-500 dark:bg-[#2a2520] dark:text-[#9a8f87] hover:bg-slate-200' : 'bg-sky-100 text-sky-700 hover:bg-sky-200'}`}
+                      title="Нажмите чтобы переключить обязательность выбора в этом блоке"
+                    >
+                      {group.required !== '0' ? 'Обязательно' : 'Необязательно'}
+                    </span>
                   )}
-                </div>
-                <div className="relative">
-                  <button
+                  <span
                     onClick={(e) => {
                       e.stopPropagation()
-                      if (visibilityOpen) {
-                        setGroupVisibilityPopover(null)
-                        return
-                      }
-                      const rect = e.currentTarget.getBoundingClientRect()
-                      setGroupVisibilityPopover({ type: 'group', id: group.id, anchorTop: rect.top, anchorBottom: rect.bottom, left: rect.right - 300 })
+                      toggleEnlargePhoto(group.id, group.enlarge_photo)
                     }}
-                    className={`mr-1 rounded-lg px-1.5 py-0.5 text-xs hover:bg-slate-100 dark:hover:bg-[#2a2520] ${visibilityCount > 0 ? 'text-sky-600' : 'text-slate-300 dark:text-[#4a4038]'}`}
-                    title="Показ/скрытие других блоков и опций при выборе этого блока"
+                    className={`cursor-pointer rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${group.enlarge_photo === '1' ? 'bg-violet-100 text-violet-700 hover:bg-violet-200' : 'bg-slate-100 text-slate-400 dark:bg-[#2a2520] dark:text-[#6a5f57] hover:bg-slate-200'}`}
+                    title="Разрешить покупателю увеличивать фото опций в этом блоке"
                   >
-                    👁 вид.{visibilityCount > 0 ? ` ${visibilityCount}` : ''}
-                  </button>
-                  {visibilityOpen && groupVisibilityPopover && (
-                    <GroupVisibilityPopover
-                      group={group}
-                      anchorTop={groupVisibilityPopover.anchorTop}
-                      anchorBottom={groupVisibilityPopover.anchorBottom}
-                      left={groupVisibilityPopover.left}
-                      allItems={allExclusionItems}
-                      effectFor={(t, id) => visibilityEffectFor('group', group.id, t, id)}
-                      onSetEffect={(t, id, effect) => setVisibilityEffect('group', group.id, t, id, effect)}
-                      onClose={() => setGroupVisibilityPopover(null)}
-                    />
+                    🔍 {group.enlarge_photo === '1' ? 'Увеличение вкл.' : 'Увеличение выкл.'}
+                  </span>
+                  <span className="rounded-full bg-slate-100 dark:bg-[#2a2520] px-2.5 py-0.5 text-xs text-slate-500 dark:text-[#9a8f87]" title={children.length > 0 ? 'Опций во вложенных блоках' : 'Опций в блоке'}>
+                    {countOptionsIn(group.id)}
+                  </span>
+                  <div className="relative">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        if (exclusionOpen) {
+                          setGroupExclusionPopover(null)
+                          return
+                        }
+                        const rect = e.currentTarget.getBoundingClientRect()
+                        setGroupExclusionPopover({ type: 'group', id: group.id, anchorTop: rect.top, anchorBottom: rect.bottom, left: rect.right - 256 })
+                      }}
+                      className={`rounded-lg px-1.5 py-0.5 text-xs hover:bg-slate-100 dark:hover:bg-[#2a2520] ${exclusionCount > 0 ? 'text-amber-600' : 'text-slate-300 dark:text-[#4a4038]'}`}
+                      title="Взаимоисключения блока"
+                    >
+                      🔀 искл.{exclusionCount > 0 ? ` ${exclusionCount}` : ''}
+                    </button>
+                    {exclusionOpen && groupExclusionPopover && (
+                      <GroupExclusionPopover
+                        group={group}
+                        anchorTop={groupExclusionPopover.anchorTop}
+                        anchorBottom={groupExclusionPopover.anchorBottom}
+                        left={groupExclusionPopover.left}
+                        allItems={allExclusionItems}
+                        isExcluded={(t, id) => isExcludedPair('group', group.id, t, id)}
+                        onToggleExclusion={(t, id) => toggleExclusion('group', group.id, t, id)}
+                        onClose={() => setGroupExclusionPopover(null)}
+                      />
+                    )}
+                  </div>
+                  <div className="relative">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        if (visibilityOpen) {
+                          setGroupVisibilityPopover(null)
+                          return
+                        }
+                        const rect = e.currentTarget.getBoundingClientRect()
+                        setGroupVisibilityPopover({ type: 'group', id: group.id, anchorTop: rect.top, anchorBottom: rect.bottom, left: rect.right - 300 })
+                      }}
+                      className={`rounded-lg px-1.5 py-0.5 text-xs hover:bg-slate-100 dark:hover:bg-[#2a2520] ${visibilityCount > 0 ? 'text-sky-600' : 'text-slate-300 dark:text-[#4a4038]'}`}
+                      title="Показ/скрытие других блоков и опций при выборе этого блока"
+                    >
+                      👁 вид.{visibilityCount > 0 ? ` ${visibilityCount}` : ''}
+                    </button>
+                    {visibilityOpen && groupVisibilityPopover && (
+                      <GroupVisibilityPopover
+                        group={group}
+                        anchorTop={groupVisibilityPopover.anchorTop}
+                        anchorBottom={groupVisibilityPopover.anchorBottom}
+                        left={groupVisibilityPopover.left}
+                        allItems={allExclusionItems}
+                        effectFor={(t, id) => visibilityEffectFor('group', group.id, t, id)}
+                        onSetEffect={(t, id, effect) => setVisibilityEffect('group', group.id, t, id, effect)}
+                        onClose={() => setGroupVisibilityPopover(null)}
+                      />
+                    )}
+                  </div>
+                  {children.length === 0 && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        if (!isLocked) duplicateGroup(group.id, group.name)
+                      }}
+                      disabled={isLocked || duplicatingGroupId === group.id}
+                      className="rounded-lg px-1.5 py-0.5 text-xs text-slate-300 dark:text-[#4a4038] hover:bg-slate-100 dark:hover:bg-[#2a2520] hover:text-slate-500 disabled:opacity-30 disabled:cursor-not-allowed"
+                      title="Копировать блок вместе с его опциями"
+                    >
+                      {duplicatingGroupId === group.id ? '…' : '⧉'}
+                    </button>
                   )}
-                </div>
-                {children.length === 0 && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation()
-                      if (!isLocked) duplicateGroup(group.id, group.name)
+                      if (!isLocked) deleteBlock(group.id, group.name)
                     }}
-                    disabled={isLocked || duplicatingGroupId === group.id}
-                    className="mr-1 rounded-lg px-1.5 py-0.5 text-xs text-slate-300 dark:text-[#4a4038] hover:bg-slate-100 dark:hover:bg-[#2a2520] hover:text-slate-500 disabled:opacity-30 disabled:cursor-not-allowed"
-                    title="Копировать блок вместе с его опциями"
+                    disabled={isLocked}
+                    className="rounded-lg px-1.5 py-0.5 text-xs text-slate-300 dark:text-[#4a4038] hover:bg-red-50 hover:text-red-500 disabled:opacity-30 disabled:cursor-not-allowed"
+                    title="Удалить блок"
                   >
-                    {duplicatingGroupId === group.id ? '…' : '⧉'}
+                    🗑
                   </button>
-                )}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    if (!isLocked) deleteBlock(group.id, group.name)
-                  }}
-                  disabled={isLocked}
-                  className="mr-3 rounded-lg px-1.5 py-0.5 text-xs text-slate-300 dark:text-[#4a4038] hover:bg-red-50 hover:text-red-500 disabled:opacity-30 disabled:cursor-not-allowed"
-                  title="Удалить блок"
-                >
-                  🗑
-                </button>
+                </div>
               </div>
 
               {!isOpen && group.model_ids && models.length > 1 && (
@@ -2867,6 +2892,7 @@ export default function AdminPage() {
       { key: 'phone', label: 'Телефон', placeholder: '+7 999 123-45-67', prefix: '📞' },
       { key: 'telegram', label: 'Telegram', placeholder: '@username или t.me/...', prefix: '✈️' },
       { key: 'whatsapp', label: 'WhatsApp', placeholder: '+7 999 123-45-67', prefix: '💬' },
+      { key: 'max', label: 'Max', placeholder: 'Ссылка на профиль в Max', prefix: '💬' },
       { key: 'email', label: 'Email', placeholder: 'info@example.com', prefix: '✉️' },
       { key: 'address', label: 'Адрес', placeholder: 'г. Москва, ул. Пример, 1', prefix: '📍' },
       { key: 'requisites', label: 'Реквизиты', placeholder: 'ИНН, ОГРН, р/с…', prefix: '🏢' },
@@ -3188,6 +3214,9 @@ export default function AdminPage() {
                         <div className="text-sm text-slate-500 dark:text-[#9a8f87]">
                           Базовая стоимость: <span className="font-semibold text-slate-700 dark:text-[#d5cfc7]">{fmt(Number(selectedModel.base_price))} ₽</span>
                         </div>
+                        <p className="text-xs text-slate-400 dark:text-[#6a5f57]">
+                          Фото для конфигуратора — квадратный кадр, показывается в шапке интерактивного расчёта у клиента.
+                        </p>
                         <button onClick={() => setEditingModel(true)} disabled={isLocked} className="w-fit rounded-xl border border-slate-200 dark:border-[#3a312a] px-4 py-2 text-sm text-slate-600 dark:text-[#b5afa7] hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
                           ✎ Редактировать
                         </button>
@@ -3238,6 +3267,41 @@ export default function AdminPage() {
                   </div>
                 </div>
               )}
+
+              <div className="overflow-hidden rounded-2xl border border-slate-100 dark:border-[#2e2820] bg-white dark:bg-[#252119] shadow-sm">
+                <div className="border-b border-slate-100 dark:border-[#2e2820] px-5 py-3">
+                  <span className="text-sm font-semibold text-slate-700 dark:text-[#d5cfc7]">Галерея</span>
+                  <p className="mt-0.5 text-xs text-slate-400 dark:text-[#6a5f57]">
+                    Дополнительные фото модели — показываются в сформированном КП как галерея с переключением стрелками.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-3 p-4 lg:p-5">
+                  {selectedModel.gallery_photos.map((photo) => (
+                    <div key={photo.id} className="group relative h-24 w-24 shrink-0 overflow-hidden rounded-xl border border-slate-200 dark:border-[#3a312a] bg-slate-50 dark:bg-[#1f1c16]">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={photo.image_url} alt="" className="h-full w-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => !isLocked && deleteModelGalleryPhoto(photo.id)}
+                        disabled={isLocked}
+                        className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-sm text-white opacity-0 transition-opacity group-hover:opacity-100 disabled:cursor-not-allowed"
+                        aria-label="Удалить фото"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => !isLocked && openMediaPicker((url) => addModelGalleryPhoto(url))}
+                    disabled={isLocked}
+                    className="flex h-24 w-24 shrink-0 flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-slate-200 dark:border-[#3a312a] text-slate-300 dark:text-[#4a4038] transition-colors disabled:cursor-not-allowed disabled:opacity-40 hover:border-[#0d5a52]"
+                  >
+                    <span className="text-2xl">+</span>
+                    <span className="text-[10px]">Добавить</span>
+                  </button>
+                </div>
+              </div>
 
               <div className="overflow-hidden rounded-2xl border border-slate-100 dark:border-[#2e2820] bg-white dark:bg-[#252119] shadow-sm">
                 <div className="border-b border-slate-100 dark:border-[#2e2820] px-5 py-2.5">
@@ -3709,10 +3773,42 @@ export default function AdminPage() {
                             </button>
                           </div>
                         </div>
-                        <label className="flex cursor-pointer items-center justify-between px-4 py-3 select-none">
-                          <span className="text-sm text-slate-600 dark:text-[#b5afa7]">Доступна в этой модели</span>
-                          <input type="checkbox" checked={option.active_model_ids.includes(Number(selectedModelId))} onChange={() => toggleOptionActiveForModel(option.id, option.active_model_ids.includes(Number(selectedModelId)))} className="h-4 w-4 rounded accent-emerald-600" />
-                        </label>
+                        {models.length > 1 ? (
+                          <div className="px-4 py-3">
+                            <div className="mb-2 text-sm text-slate-600 dark:text-[#b5afa7]">Доступна в моделях</div>
+                            <div className="flex flex-wrap gap-2">
+                              {models.map((m) => {
+                                const active = option.active_model_ids.includes(Number(m.id))
+                                return (
+                                  <label
+                                    key={m.id}
+                                    className="flex cursor-pointer items-center gap-1.5 rounded-full border border-slate-200 dark:border-[#3a312a] px-2.5 py-1 text-xs text-slate-600 dark:text-[#b5afa7] select-none"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={active}
+                                      onChange={() => toggleOptionModelActive(option.id, Number(m.id))}
+                                      disabled={isLocked}
+                                      className="h-3.5 w-3.5 rounded accent-emerald-600"
+                                    />
+                                    {m.name}
+                                  </label>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        ) : (
+                          <label className="flex cursor-pointer items-center justify-between px-4 py-3 select-none">
+                            <span className="text-sm text-slate-600 dark:text-[#b5afa7]">Доступна в этой модели</span>
+                            <input
+                              type="checkbox"
+                              checked={option.active_model_ids.includes(Number(selectedModelId))}
+                              onChange={() => toggleOptionModelActive(option.id, Number(selectedModelId))}
+                              disabled={isLocked}
+                              className="h-4 w-4 rounded accent-emerald-600"
+                            />
+                          </label>
+                        )}
                       </div>
                     </div>
                   </div>

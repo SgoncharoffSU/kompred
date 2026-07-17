@@ -6,6 +6,7 @@ type ChatMessage = { id: number; from: 'client' | 'manager'; text: string; ts: n
 
 const CLIENT_ID_KEY = 'bh_chat_client_id'
 const GREETING_DISMISSED_KEY = 'bh_chat_greeting_dismissed'
+const LAST_SEEN_PREFIX = 'bh_chat_last_seen_'
 
 function getClientId(): string {
   let id = localStorage.getItem(CLIENT_ID_KEY)
@@ -14,6 +15,16 @@ function getClientId(): string {
     localStorage.setItem(CLIENT_ID_KEY, id)
   }
   return id
+}
+
+// Without this, "unread" was pure in-memory state — reloading the page (or just
+// revisiting later) forgot that a manager reply had already been opened and read, so it
+// came back marked unread every time, no matter how long ago it was actually answered.
+function getLastSeenId(clientId: string): number {
+  return Number(localStorage.getItem(LAST_SEEN_PREFIX + clientId) || '0')
+}
+function persistLastSeenId(clientId: string, id: number) {
+  localStorage.setItem(LAST_SEEN_PREFIX + clientId, String(id))
 }
 
 // Business hours are configured in Moscow time regardless of the visitor's or the
@@ -37,7 +48,7 @@ function isWithinShowWindow(from?: string, until?: string): boolean {
 
 function ChatBubbleIcon() {
   return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
     </svg>
   )
@@ -52,6 +63,7 @@ export function SiteChatWidget({
   showUntil,
   open: openProp,
   onOpenChange,
+  bottomClassName = 'bottom-4',
 }: {
   workspaceName?: string | null
   welcomeMessage?: string | null
@@ -61,6 +73,9 @@ export function SiteChatWidget({
   showUntil?: string | null
   open?: boolean
   onOpenChange?: (open: boolean) => void
+  // Lets a page lift the bubble above its own fixed/sticky bottom bar (e.g. a mobile CTA
+  // footer) so the two don't overlap — defaults to the plain "bottom-4" used everywhere else.
+  bottomClassName?: string
 }) {
   const [withinWindow, setWithinWindow] = useState(() => isWithinShowWindow(showFrom || undefined, showUntil || undefined))
   const [delayElapsed, setDelayElapsed] = useState(appearDelaySeconds <= 0)
@@ -80,12 +95,16 @@ export function SiteChatWidget({
   const [sending, setSending] = useState(false)
   const clientIdRef = useRef('')
   const lastIdRef = useRef(0)
+  const lastSeenIdRef = useRef(0)
+  const pollingRef = useRef(false)
+  const sendingRef = useRef(false)
   const listRef = useRef<HTMLDivElement>(null)
   const openRef = useRef(open)
   openRef.current = open
 
   useEffect(() => {
     clientIdRef.current = getClientId()
+    lastSeenIdRef.current = getLastSeenId(clientIdRef.current)
   }, [])
 
   useEffect(() => {
@@ -125,20 +144,30 @@ export function SiteChatWidget({
   useEffect(() => {
     if (!visible) return
     const poll = async () => {
-      if (!clientIdRef.current) return
+      // iOS Safari can delay/coalesce background timers so a slow in-flight request is
+      // still pending when the next tick fires — without this guard both responses land
+      // with the same "after" cursor and every message in that batch gets appended twice.
+      if (!clientIdRef.current || pollingRef.current) return
+      pollingRef.current = true
       try {
         const res = await fetch(`/api/site-chat/poll?clientId=${clientIdRef.current}&after=${lastIdRef.current}`, { cache: 'no-store' })
         const data = await res.json()
         if (data.ok && data.messages?.length) {
-          setMessages((prev) => [...prev, ...data.messages])
+          setMessages((prev) => {
+            const existingIds = new Set(prev.map((m) => m.id))
+            const fresh = data.messages.filter((m: ChatMessage) => !existingIds.has(m.id))
+            return fresh.length ? [...prev, ...fresh] : prev
+          })
           lastIdRef.current = data.messages[data.messages.length - 1].id
           if (!openRef.current) {
-            const newManagerMsgs = data.messages.filter((m: ChatMessage) => m.from === 'manager').length
-            if (newManagerMsgs > 0) setUnread((u) => u + newManagerMsgs)
+            const newUnread = data.messages.filter((m: ChatMessage) => m.from === 'manager' && m.id > lastSeenIdRef.current).length
+            if (newUnread > 0) setUnread((u) => u + newUnread)
           }
         }
       } catch {
         // transient network error — the next poll tick will retry
+      } finally {
+        pollingRef.current = false
       }
     }
     poll()
@@ -149,6 +178,13 @@ export function SiteChatWidget({
   useEffect(() => {
     if (open) {
       setUnread(0)
+      if (messages.length > 0) {
+        const maxId = Math.max(...messages.map((m) => m.id))
+        if (maxId > lastSeenIdRef.current) {
+          lastSeenIdRef.current = maxId
+          persistLastSeenId(clientIdRef.current, maxId)
+        }
+      }
       listRef.current?.scrollTo({ top: listRef.current.scrollHeight })
     }
   }, [open, messages])
@@ -179,13 +215,19 @@ export function SiteChatWidget({
 
   const send = async () => {
     const text = input.trim()
-    if (!text || sending || !clientIdRef.current) return
+    // A ref, not just the `sending` state: iOS Safari can double-fire a form's submit event
+    // (touch + synthesized click both triggering it) faster than React re-renders, so two
+    // near-simultaneous calls here would both still read the stale `sending === false` and
+    // both go through — a ref updates synchronously in the same tick, closing that gap.
+    if (!text || sendingRef.current || !clientIdRef.current) return
+    sendingRef.current = true
     setSending(true)
     setInput('')
     const id = -Date.now()
     setMessages((prev) => [...prev, { id, from: 'client', text, ts: Date.now(), status: 'sending' }])
     await deliver(id, text)
     setSending(false)
+    sendingRef.current = false
   }
 
   const retry = (m: ChatMessage) => {
@@ -195,7 +237,7 @@ export function SiteChatWidget({
   if (!visible) return null
 
   return (
-    <div className={`fixed bottom-4 right-4 z-50 ${animationsEnabled ? 'animate-slide-up' : ''}`}>
+    <div className={`print:hidden fixed ${bottomClassName} right-4 z-50 flex flex-col items-end ${animationsEnabled ? 'animate-slide-up' : ''}`}>
       {showGreeting && !open && (
         <div className="mb-3 flex max-w-[240px] items-start gap-2 rounded-2xl rounded-br-sm border border-[#e0d5c9] bg-white p-3 shadow-xl dark:border-[#38322a] dark:bg-[#252119] animate-fade-in">
           <button type="button" onClick={openFromGreeting} className="flex-1 text-left text-sm text-[#3a3128] dark:text-[#d5cfc7]">
@@ -207,7 +249,12 @@ export function SiteChatWidget({
         </div>
       )}
       {open && (
-        <div className="mb-3 flex h-96 w-80 flex-col overflow-hidden rounded-2xl border border-[#e0d5c9] bg-white shadow-xl dark:border-[#38322a] dark:bg-[#252119]">
+        <div className="relative mb-3">
+          {/* Tail pointing down toward the bubble button, so the panel visibly "belongs" to
+              it instead of just floating above — same reason the button no longer shifts
+              left when this opens (both are anchored to the same right edge now). */}
+          <div className="absolute -bottom-2 right-6 h-4 w-4 rotate-45 border-b border-r border-[#e0d5c9] bg-white dark:border-[#38322a] dark:bg-[#252119]" />
+          <div className="flex h-96 w-80 flex-col overflow-hidden rounded-2xl border border-[#e0d5c9] bg-white shadow-xl dark:border-[#38322a] dark:bg-[#252119]">
           <div className="flex items-center justify-between border-b border-[#e0d5c9] px-4 py-3 dark:border-[#38322a]">
             <span className="text-sm font-semibold text-[#0d5a52] dark:text-[#4db8ae]">Чат с менеджером</span>
             <button type="button" onClick={() => setOpen(false)} className="text-[#7a6f66] hover:text-[#3a3128] dark:text-[#9a8f87]">
@@ -258,11 +305,19 @@ export function SiteChatWidget({
               </svg>
             </button>
           </form>
+          </div>
         </div>
       )}
-      <div className="relative">
+      <div className="group relative">
+        {/* Hover-only cloud tooltip — hidden while the greeting bubble or the panel itself is
+            already showing something in that same spot, so nothing doubles up. */}
+        {!open && !showGreeting && (
+          <div className="pointer-events-none absolute -top-2 right-0 z-10 w-52 -translate-y-full rounded-2xl rounded-br-sm border border-[#e0d5c9] bg-white p-3 text-sm text-[#3a3128] opacity-0 shadow-xl transition-opacity duration-150 group-hover:opacity-100 dark:border-[#38322a] dark:bg-[#252119] dark:text-[#d5cfc7]">
+            С удовольствием ответим на ваши вопросы
+          </div>
+        )}
         {animationsEnabled && !open && (
-          <span className="pointer-events-none absolute inset-0 rounded-full bg-[#0d5a52]/50 dark:bg-[#4db8ae]/50 animate-soft-ping" />
+          <span className="pointer-events-none absolute inset-0 rounded-full bg-[#0d5a52]/60 dark:bg-[#4db8ae]/60 animate-chat-ping" />
         )}
         <button
           type="button"
@@ -271,7 +326,9 @@ export function SiteChatWidget({
             setOpen((o) => !o)
           }}
           title="Чат с менеджером"
-          className="relative flex h-14 w-14 items-center justify-center rounded-full bg-[#0d5a52] text-white shadow-lg transition-transform hover:scale-105"
+          className={`relative flex h-16 w-16 items-center justify-center rounded-full bg-[#0d5a52] text-white shadow-lg transition-transform hover:scale-105 ${
+            animationsEnabled && !open ? 'animate-chat-bounce' : ''
+          }`}
         >
           <ChatBubbleIcon />
           {unread > 0 && (

@@ -63,6 +63,8 @@ const config: Config = {
         'fade-in': 'fadeIn 0.25s ease-out',
         'slide-up': 'slideUp 0.3s ease-out',
         'soft-ping': 'softPing 2.6s cubic-bezier(0,0,0.2,1) infinite',
+        'chat-ping': 'chatPing 2s cubic-bezier(0,0,0.2,1) infinite',
+        'chat-bounce': 'chatBounce 2s ease-in-out infinite',
       },
       keyframes: {
         fadeIn: {
@@ -76,6 +78,15 @@ const config: Config = {
         softPing: {
           '0%': { transform: 'scale(1)', opacity: '0.45' },
           '70%, 100%': { transform: 'scale(1.7)', opacity: '0' },
+        },
+        chatPing: {
+          '0%': { transform: 'scale(1)', opacity: '0.65' },
+          '70%, 100%': { transform: 'scale(2.1)', opacity: '0' },
+        },
+        chatBounce: {
+          '0%, 100%': { transform: 'scale(1)' },
+          '10%': { transform: 'scale(1.12)' },
+          '20%': { transform: 'scale(1)' },
         },
       },
     },

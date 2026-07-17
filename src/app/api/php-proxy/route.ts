@@ -10,7 +10,7 @@ const PHP_SERVICE_PASS = process.env.PHP_SERVICE_PASS || '143430'
 // Read-only actions may specify their target workspace directly via ?wid=
 // (used by the public, unauthenticated client-facing configurator).
 // Everything else is scoped to the workspace of the logged-in admin session.
-const PUBLIC_GET_ACTIONS = ['bootstrap', 'get_layouts', 'get_calculation']
+const PUBLIC_GET_ACTIONS = ['bootstrap', 'get_layouts', 'get_calculation', 'get_calculation_config']
 const PUBLIC_POST_ACTIONS = ['create_calculation', 'request_callback']
 
 const phpSessionCache = new Map<string, { phpsessid: string; ts: number }>()

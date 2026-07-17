@@ -1,8 +1,10 @@
 ﻿import { Yeseva_One } from 'next/font/google'
-import { CroppedHeroImage } from './cropped-hero-image'
+import { LogoWatermarkBackground } from '@/components/LogoWatermarkBackground'
+import { ChatProvider } from './chat-provider'
 import { HeaderContactIcons } from './header-contact-icons'
 import { InclusionToggle } from './inclusion-toggle'
 import { OfferContacts } from './offer-contacts'
+import { PhotoGallery } from './photo-gallery'
 import { PrintButton } from './print-button'
 import { ShareButton } from './share-button'
 import { ZoomableImage } from './zoomable-image'
@@ -38,6 +40,7 @@ type OfferData = {
   model_name: string
   model_image_url: string
   model_offer_image_crop: { mode?: 'position' | 'crop'; x: number; y: number; w?: number; h?: number } | null
+  model_gallery_photos: { id: number; image_url: string; image_crop: string | null }[]
   model_id: string
   layout_name: string
   selected_options: SelectedOption[]
@@ -48,7 +51,17 @@ type OfferData = {
 type ContactBlock = {
   id: string
   title?: string
-  data: { phone?: string; telegram?: string; whatsapp?: string; email?: string; address?: string; note?: string }
+  data: {
+    phone?: string
+    telegram?: string
+    whatsapp?: string
+    max?: string
+    email?: string
+    emails?: { label: string; email: string }[]
+    address?: string
+    requisites?: string
+    note?: string
+  }
 }
 
 type InclusionSection = {
@@ -92,6 +105,13 @@ async function getCalculation(slug: string): Promise<OfferData | null> {
           return null
         }
       })(),
+      model_gallery_photos: Array.isArray(data.model_gallery_photos)
+        ? data.model_gallery_photos.map((p: { id: number; image_url: string; image_crop: string | null }) => ({
+            id: Number(p.id),
+            image_url: normalizeUrl(p.image_url || ''),
+            image_crop: p.image_crop || null,
+          }))
+        : [],
       model_id: String(data.model_id ?? ''),
       layout_name: data.layout_name || '',
       selected_options: (data.selected_options || []).map(
@@ -185,7 +205,19 @@ export default async function OfferPage({ params }: { params: { slug: string } }
   const headerTelegram = contactBlocks.find((b) => b.data.telegram)?.data.telegram
   const headerTelegramHref = headerTelegram ? (headerTelegram.startsWith('http') ? headerTelegram : `https://t.me/${headerTelegram.replace(/^@/, '')}`) : null
   const headerPhone = contactBlocks.find((b) => b.data.phone)?.data.phone
-  const editUrl = offer?.account ? `/cli${offer.account}${offer.model_id ? `?model=${offer.model_id}` : ''}` : null
+  const headerWhatsapp = contactBlocks.find((b) => b.data.whatsapp)?.data.whatsapp
+  const headerMax = contactBlocks.find((b) => b.data.max)?.data.max
+  const headerEmails = contactBlocks.reduce<{ label: string; email: string }[]>((acc, b) => {
+    if (b.data.emails?.length) acc.push(...b.data.emails)
+    else if (b.data.email) acc.push({ label: 'Email', email: b.data.email })
+    return acc
+  }, [])
+  // edit=<slug> restores the full saved selection (options/qty/layout/choices) in the
+  // configurator, not just the model — model= is kept as a fallback in case that restore
+  // fetch fails for any reason (deleted calculation row, malformed snapshot, etc.).
+  const editUrl = offer?.account
+    ? `/cli${offer.account}?edit=${encodeURIComponent(offer.public_slug)}${offer.model_id ? `&model=${offer.model_id}` : ''}`
+    : null
   // A popup block can be duplicated and re-scoped to different models via the group's own
   // model_ids — only the block(s) actually allowed for this offer's model should render, or
   // duplicated blocks with identical content show up as repeated items.
@@ -212,7 +244,9 @@ export default async function OfferPage({ params }: { params: { slug: string } }
   }
 
   return (
-    <main className="min-h-screen bg-[#f2ece4] px-4 py-8 md:px-8">
+    <ChatProvider>
+    <main className="relative min-h-screen bg-[#f2ece4] px-4 py-8 md:px-8">
+      <LogoWatermarkBackground />
       <div className="mx-auto max-w-2xl space-y-4">
 
         {/* Brand mark — sticky so the TG/call icons stay reachable while scrolling through a
@@ -223,21 +257,29 @@ export default async function OfferPage({ params }: { params: { slug: string } }
             <img src="/logo-siberia.svg" alt={workspaceName || 'СК Сибирия'} className="h-10 w-auto" />
             <span className={`${brandFont.className} text-2xl leading-none tracking-wide text-[#0d5a52]`}>{workspaceName || 'СК СИБЕРИЯ'}</span>
           </div>
-          <HeaderContactIcons telegramHref={headerTelegramHref} phone={headerPhone} wid={phpWorkspaceId} workspaceName={workspaceName} />
+          <HeaderContactIcons
+            telegramHref={headerTelegramHref}
+            whatsapp={headerWhatsapp}
+            maxHref={headerMax}
+            emails={headerEmails}
+            phone={headerPhone}
+            wid={phpWorkspaceId}
+            workspaceName={workspaceName}
+          />
         </div>
 
-        {/* Hero photo */}
+        {/* Hero photo — a gallery (with prev/next arrows) once the model has extra photos
+            beyond the main one, otherwise just the single photo as before. */}
         {offer.model_image_url && (
-          <div className="relative overflow-hidden rounded-2xl shadow-card">
-            <div className="aspect-video w-full">
-              <CroppedHeroImage
-                src={offer.model_image_url}
-                crop={offer.model_offer_image_crop}
-                alt={offer.model_name}
-                className="h-full w-full object-cover"
-              />
-            </div>
-            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent px-6 pb-6 pt-20">
+          <div className="print:break-inside-avoid relative overflow-hidden rounded-2xl shadow-card">
+            <PhotoGallery
+              photos={[
+                { image_url: offer.model_image_url, crop: offer.model_offer_image_crop },
+                ...offer.model_gallery_photos.map((p) => ({ image_url: p.image_url, crop: null })),
+              ]}
+              alt={offer.model_name}
+            />
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent px-6 pb-6 pt-20">
               <div className="text-[10px] font-semibold uppercase tracking-widest text-white/50">Персональное предложение</div>
               <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-white md:text-3xl">
                 {offer.model_name}
@@ -247,7 +289,7 @@ export default async function OfferPage({ params }: { params: { slug: string } }
         )}
 
         {/* Hero card (title when no photo, or details) */}
-        <div className="overflow-hidden rounded-2xl border border-[#e0d5c9] bg-white shadow-card">
+        <div className="print:break-inside-avoid overflow-hidden rounded-2xl border border-[#e0d5c9] bg-white shadow-card">
           {!offer.model_image_url && (
             <div className="border-b border-[#e0d5c9] bg-[#f8f4f0] px-6 py-5">
               <div className="text-xs font-semibold uppercase tracking-widest text-[#7a6f66]">
@@ -275,44 +317,59 @@ export default async function OfferPage({ params }: { params: { slug: string } }
         {/* Base package inclusions — collapsed by default, screen only (excluded from print/PDF) */}
         {inclusionSections.length > 0 && <InclusionToggle sections={inclusionSections} />}
 
-        {/* Options list */}
-        {offer.selected_options.length > 0 && (
-          <div className="overflow-hidden rounded-2xl border border-[#e0d5c9] bg-white shadow-card">
-            <div className="border-b border-[#e0d5c9] px-6 py-3.5">
-              <span className="text-xs font-semibold uppercase tracking-widest text-[#7a6f66]">
-                Состав комплектации
-              </span>
-            </div>
-            <div className="divide-y divide-[#e0d5c9]">
-              {offer.selected_options.map((item) => (
-                <div key={item.id} className="flex items-center gap-4 px-6 py-3.5">
-                  {item.image_url && <ZoomableImage src={item.image_url} alt={item.name} />}
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-medium text-[#1a1612]">
-                      {item.name}
-                      {item.length && item.width
-                        ? ` (${item.length}×${item.width} м)`
-                        : item.length
-                          ? ` (${item.length} м)`
-                          : item.width
-                            ? ` (${item.width} м)`
-                            : item.qty > 1
-                              ? ` × ${item.qty} ${item.unit}`
-                              : ''}
+        {/* Options list — grouped into one section per group_name (the backend already sorts
+            options so a group's items are contiguous, so this is just a consecutive-run split,
+            not a full re-sort) instead of a flat list with the group name repeated as small
+            print under every single item. */}
+        {offer.selected_options.length > 0 && (() => {
+          const optionGroups: { name: string; items: typeof offer.selected_options }[] = []
+          for (const item of offer.selected_options) {
+            const current = optionGroups[optionGroups.length - 1]
+            if (current && current.name === item.group_name) current.items.push(item)
+            else optionGroups.push({ name: item.group_name, items: [item] })
+          }
+          return (
+            <div className="overflow-hidden rounded-2xl border border-[#e0d5c9] bg-white shadow-card">
+              <div className="border-b border-[#e0d5c9] px-6 py-3.5">
+                <span className="text-xs font-semibold uppercase tracking-widest text-[#7a6f66]">Опции</span>
+              </div>
+              <div className="divide-y divide-[#e0d5c9]">
+                {optionGroups.map((group, gi) => (
+                  <div key={gi}>
+                    <div className="bg-[#f8f4f0] px-6 py-2 text-xs font-semibold uppercase tracking-wide text-[#0d5a52]">{group.name}</div>
+                    <div className="divide-y divide-[#e0d5c9]">
+                      {group.items.map((item) => (
+                        <div key={item.id} className="print:break-inside-avoid flex items-center gap-4 px-6 py-3.5">
+                          {item.image_url && <ZoomableImage src={item.image_url} alt={item.name} />}
+                          <div className="min-w-0 flex-1">
+                            <div className="text-sm font-medium text-[#1a1612]">
+                              {item.name}
+                              {item.length && item.width
+                                ? ` (${item.length}×${item.width} м)`
+                                : item.length
+                                  ? ` (${item.length} м)`
+                                  : item.width
+                                    ? ` (${item.width} м)`
+                                    : item.qty > 1
+                                      ? ` × ${item.qty} ${item.unit}`
+                                      : ''}
+                            </div>
+                          </div>
+                          <div className="ml-auto shrink-0 text-sm font-semibold text-[#b87524]">
+                            {item.line_total > 0 ? '+' : ''}{formatPrice(item.line_total)}
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                    <div className="text-xs text-[#7a6f66]">{item.group_name}</div>
                   </div>
-                  <div className="ml-auto shrink-0 text-sm font-semibold text-[#b87524]">
-                    {item.line_total > 0 ? '+' : ''}{formatPrice(item.line_total)}
-                  </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
-        )}
+          )
+        })()}
 
         {/* Total price block */}
-        <div className="overflow-hidden rounded-2xl border border-[#0d5a52] bg-[#0d5a52] p-6 text-white shadow-[0_4px_24px_rgba(13,90,82,0.3)]">
+        <div className="print:break-inside-avoid overflow-hidden rounded-2xl border border-[#0d5a52] bg-[#0d5a52] p-6 text-white shadow-[0_4px_24px_rgba(13,90,82,0.3)]">
           <div className="text-xs font-semibold uppercase tracking-widest opacity-60">
             Итоговая стоимость
           </div>
@@ -332,7 +389,7 @@ export default async function OfferPage({ params }: { params: { slug: string } }
             narrow phones where three won't fit without crowding. */}
         <div className="print:hidden flex flex-wrap gap-2">
           <ShareButton title={`Персональное предложение — ${offer.model_name}`} className="flex-1 justify-center" />
-          <PrintButton className="flex-1 justify-center" />
+          <PrintButton slug={offer.public_slug} className="flex-1 justify-center" />
           {editUrl && (
             <a
               href={editUrl}
@@ -349,6 +406,9 @@ export default async function OfferPage({ params }: { params: { slug: string } }
         {/* Contacts */}
         <OfferContacts
           telegramHref={headerTelegramHref}
+          whatsapp={headerWhatsapp}
+          maxHref={headerMax}
+          emails={headerEmails}
           phone={headerPhone}
           wid={phpWorkspaceId}
           workspaceName={workspaceName}
@@ -358,7 +418,35 @@ export default async function OfferPage({ params }: { params: { slug: string } }
           chatShowUntil={chatShowUntil}
         />
 
+        {/* Base package breakdown — screen version is the collapsed InclusionToggle above;
+            this is a print-only, always-expanded twin placed at the end of the document, since
+            the contacts block above it is hidden from print (nothing there to interact with
+            on paper). */}
+        {inclusionSections.length > 0 && (
+          <div className="hidden print:block overflow-hidden rounded-2xl border border-[#e0d5c9] bg-white shadow-card">
+            <div className="border-b border-[#e0d5c9] px-6 py-3.5">
+              <span className="text-xs font-semibold uppercase tracking-widest text-[#7a6f66]">Что входит в базовую комплектацию</span>
+            </div>
+            <div className="divide-y divide-[#e0d5c9]">
+              {inclusionSections.map((section) => (
+                <div key={section.id} className="px-6 py-4">
+                  <div className="text-sm font-semibold text-[#1a1612]">{section.name}</div>
+                  <ul className="mt-2 space-y-1.5">
+                    {section.items.map((item, i) => (
+                      <li key={i} className="flex items-start gap-2 text-sm text-[#7a6f66]">
+                        <span className="mt-1 h-1 w-1 shrink-0 rounded-full bg-[#0d5a52]" />
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
       </div>
     </main>
+    </ChatProvider>
   )
 }

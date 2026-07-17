@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
   const popupBlocks = workspace?.popup_blocks
     ? workspace.popup_blocks
     : workspace?.inclusion_sections?.length
-      ? [{ id: 'inclusion-1', type: 'inclusion', title: 'Что входит в базовую стоимость', data: { sections: workspace.inclusion_sections } }]
+      ? [{ id: 'inclusion-1', type: 'inclusion', title: 'Что входит в стоимость базовой комплектации', data: { sections: workspace.inclusion_sections } }]
       : []
 
   return NextResponse.json({

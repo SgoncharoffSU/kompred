@@ -1,10 +1,12 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Yeseva_One } from 'next/font/google'
 import { ThemeToggle } from '@/components/ThemeProvider'
 import { HeaderContactIcons } from '@/components/HeaderContactIcons'
 import { SiteChatWidget } from '@/components/SiteChatWidget'
+import { LogoWatermarkBackground } from '@/components/LogoWatermarkBackground'
 
 const brandFont = Yeseva_One({ subsets: ['cyrillic', 'latin'], weight: '400', display: 'swap' })
 
@@ -131,6 +133,7 @@ interface ContactBlock {
     phone?: string
     telegram?: string
     whatsapp?: string
+    max?: string
     email?: string
     emails?: { label: string; email: string }[]
     address?: string
@@ -142,28 +145,74 @@ interface ContactBlock {
 // Shared icon-button-with-dropdown used by the "Наши контакты" card for email/map/requisites —
 // same visual language as HeaderContactIcons' phone dropdown, but generic content instead of a
 // fixed call/callback menu.
+// Portaled to document.body and positioned from a measured pixel rect (like
+// HeaderContactIcons' own menus) rather than a CSS "absolute left-0 top-full" — this button
+// can end up anywhere in the "Наши контакты" card (including near the right/bottom edge of
+// the screen), so a purely CSS-relative anchor was pushing the panel off the visible page on
+// both mobile and desktop. Direction (open up vs. down) is picked automatically from how much
+// room is left below the icon, since this same component renders both high up a desktop
+// sidebar and low down in a mobile bottom sheet.
 function IconPopoverButton({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
   const [open, setOpen] = useState(false)
+  const iconRef = useRef<HTMLDivElement>(null)
+  const [geom, setGeom] = useState<{ wrapperStyle: React.CSSProperties; tailLeft: number; direction: 'up' | 'down' } | null>(null)
+
+  useLayoutEffect(() => {
+    if (!open) return
+    const PANEL_WIDTH = 256
+    const VIEWPORT_MARGIN = 16
+    const PANEL_GAP = 12
+    const TAIL_SIZE = 16
+    const update = () => {
+      const el = iconRef.current
+      if (!el) return
+      const rect = el.getBoundingClientRect()
+      const width = Math.min(PANEL_WIDTH, window.innerWidth - VIEWPORT_MARGIN * 2)
+      let left = rect.right - width
+      left = Math.max(VIEWPORT_MARGIN, Math.min(left, window.innerWidth - width - VIEWPORT_MARGIN))
+      const iconCenterX = rect.left + rect.width / 2
+      let tailLeft = iconCenterX - left - TAIL_SIZE / 2
+      tailLeft = Math.max(14, Math.min(tailLeft, width - 14 - TAIL_SIZE))
+      const direction: 'up' | 'down' = rect.top > window.innerHeight / 2 ? 'up' : 'down'
+      const wrapperStyle: React.CSSProperties = { position: 'fixed', left, width }
+      if (direction === 'up') wrapperStyle.bottom = window.innerHeight - rect.top + PANEL_GAP
+      else wrapperStyle.top = rect.bottom + PANEL_GAP
+      setGeom({ wrapperStyle, tailLeft, direction })
+    }
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [open])
+
+  const tailClass =
+    geom?.direction === 'up'
+      ? 'absolute -bottom-2 h-4 w-4 rotate-45 border-b border-r border-[#e0d5c9] bg-white dark:border-[#38322a] dark:bg-[#252119]'
+      : 'absolute -top-2 h-4 w-4 rotate-45 border-t border-l border-[#e0d5c9] bg-white dark:border-[#38322a] dark:bg-[#252119]'
+
   return (
-    <div className="relative">
+    <div ref={iconRef} className="relative">
       <button
         type="button"
         title={title}
         onClick={() => setOpen((o) => !o)}
-        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#0d5a52]/10 dark:bg-[#0d5a52]/20 text-[#0d5a52] transition-colors hover:bg-[#0d5a52] hover:text-white"
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#0d5a52]/10 dark:bg-[#0d5a52]/20 text-[#0d5a52] transition-colors [@media(hover:hover)]:hover:bg-[#0d5a52] [@media(hover:hover)]:hover:text-white"
       >
         {icon}
       </button>
-      {open && (
+      {open && geom && createPortal(
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div
-            className="absolute left-0 top-full z-50 mt-2 w-64 overflow-hidden rounded-xl border border-[#e0d5c9] bg-white p-3 shadow-lg dark:border-[#38322a] dark:bg-[#252119]"
-            onClick={() => setOpen(false)}
-          >
-            {children}
+          <div style={geom.wrapperStyle} className="z-50">
+            <div className={tailClass} style={{ left: geom.tailLeft }} />
+            <div
+              className="relative overflow-hidden rounded-xl border border-[#e0d5c9] bg-white p-3 shadow-lg dark:border-[#38322a] dark:bg-[#252119]"
+              onClick={() => setOpen(false)}
+            >
+              {children}
+            </div>
           </div>
-        </>
+        </>,
+        document.body
       )}
     </div>
   )
@@ -438,7 +487,7 @@ const calculationService = {
     layout_id: string
     selected_options: { id: string; qty: number }[]
     total_price: number
-    option_choices?: Record<string, { name: string; price: number }>
+    option_choices?: Record<string, { id: string; name: string; price: number }>
     option_dimensions?: Record<string, { length: number; width: number }>
     account?: string
   }): Promise<{ public_slug: string }> {
@@ -787,7 +836,6 @@ function ClassicDesign(props: DesignProps) {
     pageTitle,
     pageSubtitle,
     ctaText,
-    offerNote,
     groupTexts,
     deliveryConfigs,
     deliveryKm,
@@ -832,6 +880,7 @@ function ClassicDesign(props: DesignProps) {
   } = props
 
   const [pendingPopupOption, setPendingPopupOption] = useState<{ option: ClientOption; group: ClientGroup } | null>(null)
+  const [chatOpen, setChatOpen] = useState(false)
 
   const handleOptionClick = (group: ClientGroup, option: ClientOption, isActive: boolean) => {
     if (option.max_length > 0 || option.max_width > 0) {
@@ -869,29 +918,71 @@ function ClassicDesign(props: DesignProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const optionsAnchorRef = useRef<HTMLDivElement>(null)
   const groupRefs = useRef<Record<string, HTMLDivElement | null>>({})
-  const [contactsNearBottom, setContactsNearBottom] = useState(false)
-  const [contactsExpanded, setContactsExpanded] = useState(false)
+  const layoutAnchorRef = useRef<HTMLDivElement>(null)
+  const realCtaRef = useRef<HTMLDivElement>(null)
   const [ctaBarVisible, setCtaBarVisible] = useState(false)
+  const [ctaRealCardVisible, setCtaRealCardVisible] = useState(false)
+  const [contactsVisible, setContactsVisible] = useState(false)
+  const [trailingSpacerHeight, setTrailingSpacerHeight] = useState(0)
+  // A fixed vh/px gap here can't land consistently: it needs to be "however much of the
+  // viewport is left over" once the real Итого card has scrolled up to sit right below the
+  // header, which depends on the viewport's own height AND the card's own height (which
+  // changes with the option breakdown) — neither of which a static value can track. Measuring
+  // both and computing the exact remainder makes the max-scroll position — real card flush
+  // under the header, nothing further to scroll — land the same way on every device.
+  useEffect(() => {
+    // h-10 (2.5rem) — matches the mobile header's fixed height.
+    const HEADER_HEIGHT = 40
+    // The sticky photo sits at top-8 (2rem = 32px) below the header — the Итого card's own
+    // top must clear that too, or it ends up scrolled slightly ABOVE the photo's own top
+    // edge instead of resting at/below it. The remaining 12px is just a small visible buffer.
+    const PHOTO_STICKY_TOP = 32
+    const EXTRA_GAP = PHOTO_STICKY_TOP + 12
+    const recompute = () => {
+      const cardHeight = realCtaRef.current?.offsetHeight ?? 0
+      setTrailingSpacerHeight(Math.max(0, window.innerHeight - HEADER_HEIGHT - cardHeight - EXTRA_GAP))
+    }
+    recompute()
+    window.addEventListener('resize', recompute)
+    const observer = new ResizeObserver(recompute)
+    if (realCtaRef.current) observer.observe(realCtaRef.current)
+    return () => {
+      window.removeEventListener('resize', recompute)
+      observer.disconnect()
+    }
+  }, [totalPrice, offerLink])
   useEffect(() => {
     const el = scrollContainerRef.current
     if (!el) return
     const onScroll = () => {
-      const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
-      const near = distanceFromBottom < 160
-      setContactsNearBottom(near)
-      if (!near) setContactsExpanded(false)
-      // The CTA/price bar only makes sense once the visitor has scrolled past the free
-      // model/layout pickers and the roofing block ("кровля") — showing "Сформировать" any
-      // earlier, before there's anything meaningful priced yet, is confusing.
-      const roofGroup = groups.find((g) => g.name.toLowerCase().includes('кровл'))
-      const roofEl = roofGroup ? groupRefs.current[roofGroup.id] : null
-      const anchor = roofEl || optionsAnchorRef.current
-      setCtaBarVisible(anchor ? anchor.getBoundingClientRect().bottom < el.getBoundingClientRect().bottom : true)
+      // Early trigger: show the floating Итого/button card as soon as the visitor has
+      // scrolled past the "Планировка" block (or, for models with no layouts, past the
+      // start of the options list) — it then stays fixed in place through the whole
+      // options list. One-way ratchet (only ever set to true): scrolling back up to look
+      // at the photo again shouldn't make it disappear.
+      const earlyAnchor = layoutAnchorRef.current || optionsAnchorRef.current
+      const isPastEarlyAnchor = earlyAnchor ? earlyAnchor.getBoundingClientRect().bottom < el.getBoundingClientRect().bottom : false
+      if (isPastEarlyAnchor) setCtaBarVisible(true)
+      // Late trigger: once the real, in-flow Итого card (right after the calc/summary
+      // card) has scrolled into view, the floating copy hides — so from that point on the
+      // card you actually see is the real one, which scrolls (and reads as "sticking to
+      // and following") the calc card above it, instead of two copies showing at once.
+      const realCard = realCtaRef.current
+      const realRect = realCard ? realCard.getBoundingClientRect() : null
+      const containerRect = el.getBoundingClientRect()
+      setCtaRealCardVisible(realRect ? realRect.top < containerRect.bottom : false)
+      // Contacts needs its own, slightly later trigger: showing it the instant the real card's
+      // top merely appears would have the fixed contacts bar (pinned to the bottom of the
+      // screen) cover the card, since both would land in the same lower strip of the
+      // viewport — wait until the card's bottom has cleared enough space above the contacts
+      // bar's own height for them to sit stacked instead of overlapping.
+      const CONTACTS_CLEARANCE = 140
+      setContactsVisible(realRect ? realRect.bottom + CONTACTS_CLEARANCE < containerRect.bottom : false)
     }
     onScroll()
     el.addEventListener('scroll', onScroll, { passive: true })
     return () => el.removeEventListener('scroll', onScroll)
-  }, [groups])
+  }, [])
   useEffect(() => {
     if (offerLink && offerRef.current) offerRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   }, [offerLink])
@@ -939,33 +1030,21 @@ function ClassicDesign(props: DesignProps) {
     const emailEntries = d.emails && d.emails.length > 0 ? d.emails : d.email ? [{ label: 'Email', email: d.email }] : []
 
     return (
-      <div key={block.id} className="overflow-hidden rounded-2xl border border-[#e0d5c9] dark:border-[#38322a] bg-white dark:bg-[#252119] shadow-card">
-        <div className="border-b border-[#e0d5c9] dark:border-[#38322a] px-5 py-3.5">
+      <div key={block.id} className="rounded-2xl border border-[#e0d5c9] dark:border-[#38322a] bg-white dark:bg-[#252119] shadow-card">
+        <div className="border-b border-[#e0d5c9] dark:border-[#38322a] px-3 py-2 lg:px-5 lg:py-3.5">
           <span className="text-xs font-semibold uppercase tracking-widest text-[#7a6f66] dark:text-[#9a8f87]">{block.title || 'Контакты'}</span>
         </div>
-        <div className="flex flex-wrap items-center gap-2 px-5 py-3.5">
-          <HeaderContactIcons telegramHref={blockTelegramHref} phone={d.phone} onRequestCallback={d.phone ? handleRequestCallback : undefined} />
-
-          {emailEntries.length > 0 && (
-            <IconPopoverButton
-              title="Email"
-              icon={
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
-                  <polyline points="22,6 12,13 2,6" />
-                </svg>
-              }
-            >
-              <div className="flex flex-col gap-1">
-                {emailEntries.map((e, i) => (
-                  <a key={i} href={`mailto:${e.email}`} className="rounded-lg px-2 py-1.5 text-sm hover:bg-[#0d5a52]/10">
-                    <span className="font-medium text-[#1a1612] dark:text-[#ede7de]">{e.label}</span>
-                    <span className="block text-xs text-[#7a6f66] dark:text-[#9a8f87]">{e.email}</span>
-                  </a>
-                ))}
-              </div>
-            </IconPopoverButton>
-          )}
+        <div className="flex flex-wrap items-center gap-2 px-3 py-2 lg:px-5 lg:py-3.5">
+          <HeaderContactIcons
+            telegramHref={blockTelegramHref}
+            whatsapp={d.whatsapp}
+            maxHref={d.max}
+            emails={emailEntries}
+            phone={d.phone}
+            onRequestCallback={d.phone ? handleRequestCallback : undefined}
+            onOpenChat={() => setChatOpen(true)}
+            menuDirection="up"
+          />
 
           {d.address && (
             <IconPopoverButton
@@ -1002,19 +1081,6 @@ function ClassicDesign(props: DesignProps) {
             </IconPopoverButton>
           )}
 
-          {d.whatsapp && (
-            <a
-              href={`https://wa.me/${d.whatsapp.replace(/\D/g, '')}`}
-              target="_blank"
-              rel="noreferrer"
-              title="WhatsApp"
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#0d5a52]/10 dark:bg-[#0d5a52]/20 text-[#0d5a52] transition-colors hover:bg-[#0d5a52] hover:text-white"
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413z" />
-              </svg>
-            </a>
-          )}
         </div>
         {d.note && (
           <div className="flex items-start gap-3 border-t border-[#e0d5c9] px-5 py-3.5 dark:border-[#38322a]">
@@ -1036,47 +1102,84 @@ function ClassicDesign(props: DesignProps) {
   const headerTelegram = visibleContactBlocks.find((b) => b.data.telegram)?.data.telegram
   const headerTelegramHref = headerTelegram ? (headerTelegram.startsWith('http') ? headerTelegram : `https://t.me/${headerTelegram.replace(/^@/, '')}`) : null
   const headerPhone = visibleContactBlocks.find((b) => b.data.phone)?.data.phone
+  const headerWhatsapp = visibleContactBlocks.find((b) => b.data.whatsapp)?.data.whatsapp
+  const headerMax = visibleContactBlocks.find((b) => b.data.max)?.data.max
+  const headerEmails = visibleContactBlocks.reduce<{ label: string; email: string }[]>((acc, b) => {
+    if (b.data.emails?.length) acc.push(...b.data.emails)
+    else if (b.data.email) acc.push({ label: 'Email', email: b.data.email })
+    return acc
+  }, [])
 
   return (
     <>
-      <main className="h-screen flex flex-col bg-[#f2ece4] dark:bg-[#1c1a16]">
-        <header className="relative shrink-0 z-40 border-b border-[#e0d5c9] dark:border-[#38322a] bg-white/90 dark:bg-[#252119]/90 backdrop-blur-sm">
-          <div className="mx-auto flex max-w-[1280px] items-center justify-end gap-4 px-4 py-1 md:px-8">
-            <div className="flex items-center gap-3">
-              <HeaderContactIcons telegramHref={headerTelegramHref} phone={headerPhone} onRequestCallback={headerPhone ? handleRequestCallback : undefined} />
-              <ThemeToggle />
-            </div>
-          </div>
-          {/* Sized small enough by default to sit in the same row as the icons above without
-              colliding on narrow screens — at lg+ (where there's room) it grows back to the
-              original large hang-below-header treatment. */}
-          <div className="absolute left-4 top-full z-50 flex -translate-y-1/2 items-center gap-2 lg:left-8">
+      {/* h-dvh (dynamic viewport height), not h-screen (100vh) — on mobile, 100vh is sized
+          for the viewport with the browser's address bar hidden, so it can render slightly
+          taller than what's actually visible, letting the page itself scroll a little and
+          drag the fixed header out of view. dvh tracks the real visible height instead. */}
+      <main className="relative h-dvh flex flex-col bg-[#f2ece4] dark:bg-[#1c1a16]">
+        <LogoWatermarkBackground />
+        <header className="relative shrink-0 z-40 h-10 lg:h-14 border-b border-[#e0d5c9] dark:border-[#38322a] bg-white/90 dark:bg-[#252119]/90 backdrop-blur-sm">
+          {/* Both the logo and the icons hang at the seam between the header and the beige
+              content below (top-full -translate-y-1/2), rather than sitting inside the
+              header's own row — so they sit at the same visual level as the brand mark. A
+              real translucent pill (not just backdrop-blur alone — that alone read as barely
+              visible against a busy photo) covers the hanging half specifically: the header
+              itself already blurs/masks scrolled content behind it (bg-white/90
+              backdrop-blur-sm), but that coverage stops at the header's own bottom edge —
+              without one here too, a contrasty photo scrolling past made the logo/icons
+              unreadable. */}
+          <div className="absolute left-2 top-full z-50 flex -translate-y-1/2 items-center gap-1.5 rounded-full bg-white/70 px-2 py-1 shadow-sm backdrop-blur-md dark:bg-[#1c1a16]/70 lg:left-8 lg:gap-2 lg:px-3 lg:py-1.5">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo-siberia.svg" alt={workspaceName || 'СК Сибирия'} className="h-10 w-auto drop-shadow-[0_1px_3px_rgba(255,255,255,0.5)] lg:h-20" />
+            {/* dark:brightness-0 dark:invert forces the logo to a crisp near-white silhouette
+                in dark mode — the light-mode white drop-shadow (meant as separation against a
+                busy photo) was instead reading as a blur/glow halo once the background turned
+                dark, so it's dropped there too. */}
+            <img
+              src="/logo-siberia.svg"
+              alt={workspaceName || 'СК Сибирия'}
+              className="h-8 w-auto drop-shadow-[0_1px_3px_rgba(255,255,255,0.5)] dark:brightness-0 dark:invert dark:drop-shadow-none lg:h-20"
+            />
+            {/* Always visible — shrinks on narrow phones instead of disappearing, so the
+                brand name stays on screen at every width. */}
             <span
-              className={`${brandFont.className} text-xl leading-none tracking-wide text-[#0d5a52] drop-shadow-[0_1px_2px_rgba(255,255,255,0.6)] dark:text-[#5fcabf] dark:drop-shadow-[0_1px_3px_rgba(0,0,0,0.5)] lg:text-5xl`}
+              className={`${brandFont.className} text-xs leading-none tracking-wide text-[#0d5a52] drop-shadow-[0_1px_2px_rgba(255,255,255,0.6)] dark:text-[#4a8f88] dark:drop-shadow-none min-[360px]:text-sm min-[420px]:text-lg lg:text-5xl`}
             >
               СК СИБЕРИЯ
             </span>
           </div>
+          <div className="absolute right-2 top-full z-50 flex -translate-y-1/2 items-center gap-2 rounded-full bg-white/70 px-2 py-1 shadow-sm backdrop-blur-md dark:bg-[#1c1a16]/70 lg:right-8 lg:gap-3 lg:px-3 lg:py-1.5">
+            <HeaderContactIcons
+              telegramHref={headerTelegramHref}
+              whatsapp={headerWhatsapp}
+              maxHref={headerMax}
+              emails={headerEmails}
+              phone={headerPhone}
+              onRequestCallback={headerPhone ? handleRequestCallback : undefined}
+              onOpenChat={() => setChatOpen(true)}
+            />
+            <ThemeToggle />
+          </div>
         </header>
 
-        <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
+        {/* overscroll-y-contain stops rubber-band/bounce scroll from chaining up to the page
+            itself once this container hits its own scroll limits — without it, overscrolling
+            here could visually drag the fixed header along with it. */}
+        <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain lg:overflow-hidden">
           {/* top-8 (not top-0) leaves a gap below the header for the smaller mobile logo, which
               hangs a little past the header by design — this only needs to clear the small
               logo since the sticky block itself is lg:hidden (the large lg: logo never applies here). */}
-          <div className="lg:hidden sticky top-8 z-0 [&>div]:rounded-none [&>div]:shadow-none [&_.aspect-square]:!aspect-auto [&_.aspect-square]:!h-[62vh]">{photoBlock}</div>
+          <div className="lg:hidden sticky top-8 z-0 [&>div]:rounded-none [&>div]:shadow-none [&_.aspect-square]:!aspect-auto [&_.aspect-square]:!h-[70vh]">{photoBlock}</div>
 
-          <div className="relative z-10 mx-auto max-w-[1280px] px-4 pb-6 pt-16 md:px-8 md:pb-10 md:pt-20 lg:h-full lg:flex lg:flex-col lg:pt-10">
+          <div className="relative z-10 mx-auto max-w-[1280px] px-4 pb-6 pt-16 md:px-8 md:pb-10 md:pt-20 lg:h-full lg:flex lg:flex-col lg:pt-6">
             <div className="bg-[#f2ece4] dark:bg-[#1c1a16] lg:flex lg:flex-1 lg:flex-col lg:min-h-0">
             <div className="mb-6 lg:shrink-0 lg:pl-[340px]">
               {(pageTitle || workspaceName) && (
                 <h1 className="text-2xl font-extrabold tracking-tight text-[#1a1612] dark:text-[#ede7de] md:text-3xl">{pageTitle || workspaceName}</h1>
               )}
               {(pageSubtitle || !pageTitle) && (
-                <p className="mt-1 rounded-md bg-white/70 dark:bg-[#252119]/70 px-4 py-3 text-base lg:bg-transparent lg:px-0 lg:py-0 lg:text-sm text-[#7a6f66] dark:text-[#9a8f87]">
+                <p className="mt-1 rounded-md bg-white/70 dark:bg-[#252119]/70 px-4 py-3 text-base lg:hidden text-[#7a6f66] dark:text-[#9a8f87]">
                   {pageSubtitle || 'Выберите модель, планировку и опции — получите ссылку с персональным расчётом'}
-                  <span className="lg:hidden ml-1 inline-block animate-bounce text-2xl align-middle">👇</span>
+                  <span className="ml-1 inline-block animate-bounce text-2xl align-middle">👇</span>
                 </p>
               )}
             </div>
@@ -1095,7 +1198,12 @@ function ClassicDesign(props: DesignProps) {
             )}
 
             <div className="grid gap-6 lg:grid-cols-[1fr_340px] lg:flex-1 lg:min-h-0">
-              <div className="space-y-5 lg:overflow-y-auto lg:pb-6 lg:pr-1">
+              <div className="space-y-5 lg:overflow-y-auto lg:pb-6 lg:pl-1 lg:pr-1">
+                {(pageSubtitle || !pageTitle) && (
+                  <p className="hidden -mb-3 text-sm text-[#7a6f66] dark:text-[#9a8f87] lg:block">
+                    {pageSubtitle || 'Выберите модель, планировку и опции — получите ссылку с персональным расчётом'}
+                  </p>
+                )}
                 <div className="overflow-hidden rounded-2xl border border-[#e0d5c9] dark:border-[#38322a] bg-white dark:bg-[#252119] shadow-card">
                   <div className="border-b border-[#e0d5c9] dark:border-[#38322a] px-5 py-3.5">
                     <span className="text-xs font-semibold uppercase tracking-widest text-[#7a6f66] dark:text-[#9a8f87]">Модель</span>
@@ -1132,7 +1240,7 @@ function ClassicDesign(props: DesignProps) {
                 </div>
 
                 {(loading || layouts.length > 0) && (
-                  <div className="overflow-hidden rounded-2xl border border-[#e0d5c9] dark:border-[#38322a] bg-white dark:bg-[#252119] shadow-card">
+                  <div ref={layoutAnchorRef} className="overflow-hidden rounded-2xl border border-[#e0d5c9] dark:border-[#38322a] bg-white dark:bg-[#252119] shadow-card">
                     <div className="border-b border-[#e0d5c9] dark:border-[#38322a] px-5 py-3.5">
                       <span className="text-xs font-semibold uppercase tracking-widest text-[#7a6f66] dark:text-[#9a8f87]">Планировка</span>
                     </div>
@@ -1346,6 +1454,11 @@ function ClassicDesign(props: DesignProps) {
                                       const choice = selectedOptionChoices[option.id]
                                       const hasChoices = (option.popup_options?.length ?? 0) > 0
 
+                                      // Stepper options price by quantity (matches the summary sidebar's own
+                                      // base_price + price_modifier * qty math) — qty defaults to 1 there whenever
+                                      // it hasn't been touched yet (0), so the card's shown price matches what the
+                                      // summary would actually charge before the visitor has changed the stepper.
+                                      const effectiveQty = hasStepper && qty > 0 ? qty : 1
                                       const priceLine = hasDimensions ? (
                                         <>
                                           {option.base_price > 0 && `+${fmt(option.base_price)} `}
@@ -1354,8 +1467,8 @@ function ClassicDesign(props: DesignProps) {
                                       ) : (
                                         <>
                                           {option.base_price > 0 && `+${fmt(option.base_price)} `}
-                                          {option.price_modifier > 0 ? '+' : ''}
-                                          {fmt(option.price_modifier)}
+                                          {option.price_modifier * effectiveQty > 0 ? '+' : ''}
+                                          {fmt(option.price_modifier * effectiveQty)}
                                         </>
                                       )
 
@@ -1572,7 +1685,7 @@ function ClassicDesign(props: DesignProps) {
                   <div className="border-b border-[#e0d5c9] dark:border-[#38322a] px-5 py-3.5">
                     <span className="text-xs font-semibold uppercase tracking-widest text-[#7a6f66] dark:text-[#9a8f87]">Ваша конфигурация</span>
                   </div>
-                  <div className="space-y-4 p-5">
+                  <div className="space-y-4 p-5 pb-7">
                     <div>
                       <div className="text-xs font-medium uppercase tracking-widest text-[#7a6f66] dark:text-[#9a8f87]">Итоговая стоимость</div>
                       <div key={totalPrice} className="mt-1 text-3xl font-extrabold tracking-tight text-[#1a1612] dark:text-[#ede7de] animate-fade-in">
@@ -1668,11 +1781,14 @@ function ClassicDesign(props: DesignProps) {
                       </div>
                     )}
 
+                    {/* Hidden on mobile — the sticky mobile footer below is the only
+                        "Сформировать предложение" action there now, so this in-card copy
+                        doesn't duplicate it. Desktop has no such footer, so it stays here. */}
                     <button
                       type="button"
                       onClick={createOffer}
                       disabled={saving || !selectedModelId || (layouts.length > 0 && !selectedLayoutId)}
-                      className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#0d5a52] px-4 py-3 text-sm font-bold text-white transition-all duration-200 hover:bg-[#0a4840] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+                      className="hidden w-full items-center justify-center gap-2 rounded-xl bg-[#0d5a52] px-4 py-3 text-sm font-bold text-white transition-all duration-200 hover:bg-[#0a4840] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 lg:flex"
                     >
                       {saving ? (
                         <>
@@ -1711,58 +1827,112 @@ function ClassicDesign(props: DesignProps) {
                     )}
                   </div>
                 </div>
-
-                <p className="px-1 text-center text-xs text-[#7a6f66] dark:text-[#9a8f87]">{offerNote || 'Предложение фиксируется по ссылке и не меняется'}</p>
               </aside>
             </div>
             </div>
 
-            {/* Transparent gap so the sticky photo shows through once everything above has
-                scrolled past — the final screen assembles from photo (behind) + contacts +
-                price bar (both fixed, overlaid on top). */}
-            <div className="lg:hidden h-[45vh]" />
+            {/* Real, in-flow Итого/button card — mobile only, since desktop keeps its CTA
+                button inside the aside itself. This is what the floating copy below hides
+                itself in favor of once it scrolls into view: from here on, scrolling the
+                page moves this card exactly like any other content, which reads as it having
+                "attached to" the calc card above and following it up the screen. Pulled up
+                with a negative margin so it visibly overlaps the calc card, like a card
+                peeking over the one behind it — stays within the calc card's own pb-7 bottom
+                padding cushion so it doesn't land on actual text. Stacks vertically below
+                "sm" so the button never runs into the price on narrow phones. */}
+            {/* z-30 so this card stacks ABOVE the fixed contacts bar below (z-20) whenever
+                they visually overlap during the scroll transition — a plain in-flow element
+                would otherwise paint behind any positioned sibling regardless of the timing
+                of when each becomes visible. */}
+            <div
+              ref={realCtaRef}
+              className="relative z-30 lg:hidden -mt-7 flex flex-col gap-3 rounded-2xl border border-[#e0d5c9] dark:border-[#38322a] bg-white dark:bg-[#252119] shadow-card px-4 py-3 sm:flex-row sm:items-center"
+            >
+              <div className="flex min-w-0 flex-1 items-baseline gap-1.5">
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-[#7a6f66] dark:text-[#9a8f87]">Итого</span>
+                <span className="text-lg font-extrabold tracking-tight text-[#1a1612] dark:text-[#ede7de] leading-none">{fmt(totalPrice)}</span>
+              </div>
+              {offerLink ? (
+                <div className="flex gap-2 sm:shrink-0">
+                  <a href={offerLink} target="_blank" rel="noreferrer" className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-[#0d5a52]/40 px-3 py-2.5 text-xs font-semibold text-[#0d5a52] sm:flex-none">
+                    Открыть ↗
+                  </a>
+                  <button type="button" onClick={copyLink} className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#0d5a52] px-4 py-2.5 text-xs font-bold text-white sm:flex-none">
+                    <CopyIcon />
+                    {copied ? 'Скопировано!' : 'Скопировать'}
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={createOffer}
+                  disabled={saving || !selectedModelId || (layouts.length > 0 && !selectedLayoutId)}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#0d5a52] px-5 py-2.5 text-sm font-bold text-white disabled:opacity-50 disabled:cursor-not-allowed sm:w-auto sm:shrink-0"
+                >
+                  {saving ? (
+                    <>
+                      <SpinnerIcon />
+                      Формируем…
+                    </>
+                  ) : (
+                    ctaText || 'Сформировать предложение'
+                  )}
+                </button>
+              )}
+            </div>
+
           </div>
-          <div className="lg:hidden h-20" />
+          {/* Transparent gap so the sticky photo shows through once everything above has
+              scrolled past — the final screen assembles from photo (behind) + price card
+              (fixed, overlaid on top). Height is measured (see the trailingSpacerHeight
+              effect above), not a fixed vh/px guess — it's exactly "whatever's left of the
+              viewport" once the real Итого card has scrolled up to sit flush under the
+              header, so the max-scroll position lands the same way regardless of
+              device/viewport height or how tall the card's own content is. */}
+          <div className="lg:hidden" style={{ height: trailingSpacerHeight }} />
         </div>
 
+        {/* A plain fixed bar (not sticky, not in-flow) — appears once the real, in-flow Итого
+            card has scrolled up far enough to clear the space this bar itself occupies at the
+            bottom of the screen (see the CONTACTS_CLEARANCE check above), sitting flush at
+            the bottom right below it, rather than waiting until the visitor has scrolled all
+            the way to the true end of the page. Full width, flat — the [&>div] overrides
+            strip each contactsCards entry's own rounded/bordered "card" look (built for the
+            desktop sidebar) so it reads as one flat strip. */}
         {contactsCards.length > 0 && (
           <div
-            className={`lg:hidden fixed bottom-20 inset-x-0 z-20 border-t border-[#e0d5c9] dark:border-[#38322a] bg-[#f2ece4]/95 backdrop-blur-sm transition-all duration-200 dark:bg-[#1c1a16]/95 ${
-              contactsNearBottom ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-3 opacity-0'
+            className={`lg:hidden fixed inset-x-0 bottom-0 z-20 border-t border-[#e0d5c9] dark:border-[#38322a] bg-[#f2ece4]/95 backdrop-blur-sm transition-all duration-200 dark:bg-[#1c1a16]/95 ${
+              contactsVisible ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-3 opacity-0'
             }`}
           >
-            {contactsExpanded ? (
-              <div className="space-y-2 px-4 pb-2 pt-2">{contactsCards}</div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setContactsExpanded(true)}
-                className="flex w-full items-center justify-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-[#0d5a52] dark:text-[#4db8ae]"
-              >
-                📞 Связаться с нами
-                <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 16 16">
-                  <path d="M4 6l4 4 4-4" />
-                </svg>
-              </button>
-            )}
+            <div className="flex max-h-[40vh] flex-wrap items-center justify-center gap-2 overflow-y-auto px-4 py-3 [&>div]:rounded-none [&>div]:border-0 [&>div]:bg-transparent [&>div]:shadow-none">
+              {contactsCards}
+            </div>
           </div>
         )}
 
+        {/* A floating rounded card (not edge-to-edge) — appears (with a soft fade-in) once
+            scrolled past "Планировка" and stays fixed in place through the options list. It
+            disappears INSTANTLY (duration-0, no fade/fall) the moment the real, in-flow copy
+            right after the calc card has scrolled into view — a visible fade-out there would
+            briefly show both at once and read as the card "falling" into place; swapping
+            instantly at that exact crossover reads instead as it having attached to the calc
+            card with no motion at all. */}
         <div
-          className={`lg:hidden fixed bottom-0 inset-x-0 z-30 border-t border-[#e0d5c9] dark:border-[#38322a] bg-white/95 dark:bg-[#252119]/95 backdrop-blur-sm px-4 py-3 flex items-center gap-3 transition-all duration-200 ${
-            ctaBarVisible ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-full opacity-0'
-          }`}
+          className={`lg:hidden fixed bottom-4 inset-x-4 z-30 rounded-2xl border border-[#e0d5c9] dark:border-[#38322a] bg-white/95 dark:bg-[#252119]/95 backdrop-blur-sm shadow-card px-4 py-3 flex flex-col gap-3 transition-all sm:flex-row sm:items-center ${
+            ctaRealCardVisible ? 'duration-0' : 'duration-500'
+          } ${ctaBarVisible && !ctaRealCardVisible ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-full opacity-0'}`}
         >
-          <div className="flex-1 min-w-0">
-            <div className="text-[10px] font-semibold uppercase tracking-widest text-[#7a6f66] dark:text-[#9a8f87]">Итого</div>
-            <div className="text-lg font-extrabold tracking-tight text-[#1a1612] dark:text-[#ede7de] leading-none">{fmt(totalPrice)}</div>
+          <div className="flex min-w-0 flex-1 items-baseline gap-1.5">
+            <span className="text-[10px] font-semibold uppercase tracking-widest text-[#7a6f66] dark:text-[#9a8f87]">Итого</span>
+            <span className="text-lg font-extrabold tracking-tight text-[#1a1612] dark:text-[#ede7de] leading-none">{fmt(totalPrice)}</span>
           </div>
           {offerLink ? (
-            <div className="flex gap-2 shrink-0">
-              <a href={offerLink} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 rounded-xl border border-[#0d5a52]/40 px-3 py-2.5 text-xs font-semibold text-[#0d5a52]">
+            <div className="flex gap-2 sm:shrink-0">
+              <a href={offerLink} target="_blank" rel="noreferrer" className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-[#0d5a52]/40 px-3 py-2.5 text-xs font-semibold text-[#0d5a52] sm:flex-none">
                 Открыть ↗
               </a>
-              <button type="button" onClick={copyLink} className="flex items-center gap-1.5 rounded-xl bg-[#0d5a52] px-4 py-2.5 text-xs font-bold text-white">
+              <button type="button" onClick={copyLink} className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#0d5a52] px-4 py-2.5 text-xs font-bold text-white sm:flex-none">
                 <CopyIcon />
                 {copied ? 'Скопировано!' : 'Скопировать'}
               </button>
@@ -1772,7 +1942,7 @@ function ClassicDesign(props: DesignProps) {
               type="button"
               onClick={createOffer}
               disabled={saving || !selectedModelId || (layouts.length > 0 && !selectedLayoutId)}
-              className="shrink-0 flex items-center gap-2 rounded-xl bg-[#0d5a52] px-5 py-2.5 text-sm font-bold text-white disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#0d5a52] px-5 py-2.5 text-sm font-bold text-white disabled:opacity-50 disabled:cursor-not-allowed sm:w-auto sm:shrink-0"
             >
               {saving ? (
                 <>
@@ -1844,6 +2014,11 @@ function ClassicDesign(props: DesignProps) {
         animationsEnabled={chatAnimations}
         showFrom={chatShowFrom}
         showUntil={chatShowUntil}
+        open={chatOpen}
+        onOpenChange={setChatOpen}
+        // Clears the mobile sticky contacts+CTA footer (lg:hidden, so no offset needed on
+        // desktop) so the two don't sit on top of each other in the bottom-right corner.
+        bottomClassName="bottom-24 lg:bottom-4"
       />
     </>
   )
@@ -1880,6 +2055,17 @@ export default function ClientPage() {
   const [quantities, setQuantities] = useState<Record<string, number>>({})
   const [dimensions, setDimensions] = useState<Record<string, { length: number; width: number }>>({})
   const [selectedOptionChoices, setSelectedOptionChoices] = useState<Record<string, PopupChoice>>({})
+  // Populated once (if the page was opened via "Изменить конфигурацию", ?edit=<slug>) by the
+  // Models effect below, then consumed and cleared by the Layouts+groups+options effect once
+  // that model's own data has loaded — a ref, not state, since it's a one-time handoff between
+  // two effects rather than something that should itself trigger a re-render/re-run.
+  const pendingRestoreRef = useRef<{
+    layoutId: string
+    selectedByGroup: Record<string, string[]>
+    quantities: Record<string, number>
+    optionChoices: Record<string, PopupChoice>
+    dimensions: Record<string, { length: number; width: number }>
+  } | null>(null)
   const [exclusions, setExclusions] = useState<Exclusion[]>([])
   const [visibilityRules, setVisibilityRules] = useState<VisibilityRule[]>([])
 
@@ -1942,16 +2128,70 @@ export default function ClientPage() {
 
   // Models
   useEffect(() => {
-    const modelParam = new URLSearchParams(window.location.search).get('model')
-    modelService
-      .getAllModels()
-      .then((all) => {
+    const params = new URLSearchParams(window.location.search)
+    const modelParam = params.get('model')
+    const editSlug = params.get('edit')
+
+    const init = async () => {
+      // "Изменить конфигурацию" on the generated offer page links here with ?edit=<slug> —
+      // fetch the saved calculation's raw selection (not just its model) so the whole
+      // configuration can be restored, not just the model choice. Read before the model list
+      // itself so the initial model can be the restored one rather than the first available.
+      let restoredModelId: string | null = null
+      if (editSlug) {
+        try {
+          const res = await fetch(`/api/php-proxy?action=get_calculation_config&slug=${encodeURIComponent(editSlug)}`)
+          const data = await res.json()
+          if (data.ok) {
+            restoredModelId = data.model_id ? String(data.model_id) : null
+            const selectedByGroup: Record<string, string[]> = {}
+            const restoredQuantities: Record<string, number> = {}
+            for (const so of data.selected_options || []) {
+              const gid = so.group_id != null ? String(so.group_id) : ''
+              if (!gid) continue
+              const oid = String(so.id)
+              if (!selectedByGroup[gid]) selectedByGroup[gid] = []
+              selectedByGroup[gid].push(oid)
+              restoredQuantities[oid] = Math.max(1, Number(so.qty) || 1)
+            }
+            const optionChoices: Record<string, PopupChoice> = {}
+            for (const [oid, choice] of Object.entries((data.option_choices || {}) as Record<string, { id?: string; name: string; price: number }>)) {
+              optionChoices[oid] = { id: choice.id || oid, name: choice.name, price: Number(choice.price) || 0 }
+            }
+            const restoredDimensions: Record<string, { length: number; width: number }> = {}
+            for (const [oid, dim] of Object.entries((data.option_dimensions || {}) as Record<string, { length: number; width: number }>)) {
+              restoredDimensions[oid] = { length: Number(dim.length) || 0, width: Number(dim.width) || 0 }
+            }
+            pendingRestoreRef.current = {
+              layoutId: data.layout_id ? String(data.layout_id) : '',
+              selectedByGroup,
+              quantities: restoredQuantities,
+              optionChoices,
+              dimensions: restoredDimensions,
+            }
+          }
+        } catch {
+          // Falls through to the normal model=/first-model selection below.
+        }
+      }
+
+      try {
+        const all = await modelService.getAllModels()
         setModels(all)
-        const initial = modelParam && all.find((m) => m.id === modelParam) ? modelParam : all[0]?.id || ''
+        const initial =
+          (restoredModelId && all.find((m) => m.id === restoredModelId) ? restoredModelId : null) ||
+          (modelParam && all.find((m) => m.id === modelParam) ? modelParam : null) ||
+          all[0]?.id ||
+          ''
         if (initial) setSelectedModelId(initial)
-      })
-      .catch(() => setError('Не удалось загрузить модели'))
-      .finally(() => setLoading(false))
+      } catch {
+        setError('Не удалось загрузить модели')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    init()
   }, [])
 
   // Exclusions
@@ -1979,7 +2219,6 @@ export default function ClientPage() {
       .then(async ([layoutList, groupList]) => {
         setLayouts(layoutList)
         setGroups(groupList)
-        if (layoutList.length > 0) setSelectedLayoutId(layoutList[0].id)
 
         const perGroup = await Promise.all(groupList.map(async (g) => ({ groupId: g.id, options: await optionService.getOptionsByGroup(g.id, selectedModelId) })))
         const groupById = new Map(groupList.map((g) => [g.id, g]))
@@ -1996,7 +2235,23 @@ export default function ClientPage() {
           if (defaultIds.length > 0) defaults[groupId] = defaultIds
         })
         setOptionsByGroup(byGroup)
-        setSelectedOptions(defaults)
+
+        // "Изменить конфигурацию" (?edit=<slug>) — apply the saved selection now that this
+        // model's own layouts/groups/options have finished loading, instead of the usual
+        // per-group defaults. One-shot: cleared right after so switching models afterwards
+        // goes back to normal default-based selection.
+        const restore = pendingRestoreRef.current
+        if (restore) {
+          pendingRestoreRef.current = null
+          setSelectedLayoutId(layoutList.find((l) => l.id === restore.layoutId)?.id || layoutList[0]?.id || '')
+          setSelectedOptions(restore.selectedByGroup)
+          setQuantities(restore.quantities)
+          setSelectedOptionChoices(restore.optionChoices)
+          setDimensions(restore.dimensions)
+        } else {
+          if (layoutList.length > 0) setSelectedLayoutId(layoutList[0].id)
+          setSelectedOptions(defaults)
+        }
       })
       .catch(() => setError('Не удалось загрузить конфигуратор'))
       .finally(() => setLoading(false))
@@ -2312,10 +2567,12 @@ export default function ClientPage() {
     setSaving(true)
     setError('')
     try {
-      const optionChoices: Record<string, { name: string; price: number }> = {}
+      // id is saved alongside name/price so "Изменить конфигурацию" can later restore exactly
+      // which popup choice was picked (matching by id), not just its name/price for display.
+      const optionChoices: Record<string, { id: string; name: string; price: number }> = {}
       for (const id of selectedOptionIds) {
         const choice = selectedOptionChoices[id]
-        if (choice) optionChoices[id] = { name: choice.name, price: choice.price }
+        if (choice) optionChoices[id] = { id: choice.id, name: choice.name, price: choice.price }
       }
       const optionDimensions: Record<string, { length: number; width: number }> = {}
       for (const id of selectedOptionIds) {

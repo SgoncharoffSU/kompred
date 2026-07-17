@@ -20,7 +20,7 @@ export function InclusionToggle({ sections }: { sections: InclusionSection[] }) 
         className="flex w-full items-center justify-between gap-3 px-6 py-3.5 text-left"
       >
         <span className="text-xs font-semibold uppercase tracking-widest text-[#7a6f66]">
-          Что входит в базовую стоимость
+          Что входит в базовую комплектацию
           <span className="ml-2 normal-case font-normal text-[#b0a499]">{totalItems} пунктов</span>
         </span>
         <svg

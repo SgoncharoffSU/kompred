@@ -1,23 +1,35 @@
 'use client'
 
 import { HeaderContactIcons as BaseHeaderContactIcons } from '@/components/HeaderContactIcons'
+import { useChatContext } from './chat-provider'
 
-const smallIconClass =
-  'flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#0d5a52]/10 text-[#0d5a52] transition-colors hover:bg-[#0d5a52] hover:text-white'
+// Size/shape only — HeaderContactIcons applies its own per-icon brand colors (Telegram
+// blue, phone gold) on top of this.
+const smallIconClass = 'flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors'
 
 export function HeaderContactIcons({
   telegramHref,
+  whatsapp,
+  maxHref,
+  emails,
   phone,
   wid,
   workspaceName,
   iconClassName,
+  menuDirection,
 }: {
   telegramHref?: string | null
+  whatsapp?: string | null
+  maxHref?: string | null
+  emails?: { label: string; email: string }[] | null
   phone?: string | null
   wid?: string | null
   workspaceName?: string | null
   iconClassName?: string
+  menuDirection?: 'up' | 'down'
 }) {
+  const { setChatOpen } = useChatContext()
+
   const handleRequestCallback = async (callbackPhone: string) => {
     try {
       const url = `/api/php-proxy?action=request_callback${wid ? `&wid=${encodeURIComponent(wid)}` : ''}`
@@ -37,9 +49,14 @@ export function HeaderContactIcons({
   return (
     <BaseHeaderContactIcons
       telegramHref={telegramHref}
+      whatsapp={whatsapp}
+      maxHref={maxHref}
+      emails={emails}
       phone={phone}
       onRequestCallback={phone ? handleRequestCallback : undefined}
+      onOpenChat={() => setChatOpen(true)}
       iconClassName={iconClassName ?? smallIconClass}
+      menuDirection={menuDirection}
     />
   )
 }

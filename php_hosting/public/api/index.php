@@ -8,12 +8,12 @@ $action = isset($_GET['action']) ? $_GET['action'] : '';
 // Every request must be scoped to a tenant workspace. The Next.js proxy in front of
 // this API resolves the caller's workspace (from their session, or from ?wid= for the
 // public client-facing configurator) and forwards it as X-Workspace-ID — never trust a
-// request that arrives without one. get_calculation is the one exception: it's looked
-// up by an unguessable public_slug token and derives its own workspace from the stored
-// calculation row, so it can't use the header (the fixed-offer page fetches PHP directly,
-// without going through the proxy).
+// request that arrives without one. get_calculation and get_calculation_config are the
+// exceptions: both are looked up by an unguessable public_slug token and derive their own
+// workspace from the stored calculation row, so they can't use the header (the fixed-offer
+// page fetches PHP directly, without going through the proxy).
 $WORKSPACE_ID = isset($_SERVER['HTTP_X_WORKSPACE_ID']) ? intval($_SERVER['HTTP_X_WORKSPACE_ID']) : 0;
-if ($WORKSPACE_ID <= 0 && $action !== 'get_calculation') {
+if ($WORKSPACE_ID <= 0 && $action !== 'get_calculation' && $action !== 'get_calculation_config') {
     json_out(array('ok' => false, 'error' => 'workspace required'));
 }
 
@@ -177,6 +177,17 @@ $col_check = $db->query("SHOW COLUMNS FROM option_model_availability LIKE 'is_ac
 if ($col_check && $col_check->num_rows === 0) {
     $db->query("ALTER TABLE option_model_availability ADD COLUMN is_active TINYINT(1) NOT NULL DEFAULT 1");
 }
+// Extra photos per model, beyond the single image_url — shown as a gallery (with prev/next
+// arrows) on the generated offer page, in addition to the main configurator/offer photo.
+$db->query("CREATE TABLE IF NOT EXISTS model_gallery_photos (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    model_id INT NOT NULL,
+    image_url TEXT NOT NULL,
+    image_crop VARCHAR(200) NULL,
+    sort_order INT NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (model_id) REFERENCES models(id) ON DELETE CASCADE
+)");
 $col_check = $db->query("SHOW COLUMNS FROM options_catalog LIKE 'group_id'");
 if ($col_check && $col_check->num_rows === 0) {
     $db->query("ALTER TABLE options_catalog ADD COLUMN group_id INT NULL");
@@ -338,11 +349,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'bootstrap') {
     $media = array();
     $folders = array();
 
+    $gallery_by_model = array();
+    $gallery_stmt = $db->prepare('SELECT mgp.id, mgp.model_id, mgp.image_url, mgp.image_crop FROM model_gallery_photos mgp INNER JOIN models m ON m.id=mgp.model_id WHERE m.workspace_id=? ORDER BY mgp.sort_order ASC, mgp.id ASC');
+    $gallery_stmt->bind_param('i', $WORKSPACE_ID);
+    $gallery_stmt->execute();
+    $gres = $gallery_stmt->get_result();
+    while ($g = $gres->fetch_assoc()) {
+        $gmid = intval($g['model_id']);
+        if (!isset($gallery_by_model[$gmid])) $gallery_by_model[$gmid] = array();
+        $gallery_by_model[$gmid][] = array('id' => intval($g['id']), 'image_url' => $g['image_url'], 'image_crop' => $g['image_crop']);
+    }
+
     $stmt = $db->prepare('SELECT id,name,image_url,image_crop,offer_image_crop,base_price,sort_order,created_at FROM models WHERE workspace_id=? ORDER BY sort_order ASC, id ASC');
     $stmt->bind_param('i', $WORKSPACE_ID);
     $stmt->execute();
     $res = $stmt->get_result();
-    while ($row = $res->fetch_assoc()) $models[] = stringify_row($row);
+    while ($row = $res->fetch_assoc()) {
+        $row['gallery_photos'] = isset($gallery_by_model[intval($row['id'])]) ? $gallery_by_model[intval($row['id'])] : array();
+        $models[] = stringify_row($row);
+    }
 
     $availability = array();
     $active_avail = array();
@@ -619,6 +644,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'update_model_offer_cro
     $stmt->bind_param('sii', $image_crop, $id, $WORKSPACE_ID);
     $stmt->execute();
     json_out(array('ok' => true));
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'add_model_gallery_photo') {
+    $d = json_decode(file_get_contents('php://input'), true);
+    $model_id = intval(isset($d['model_id']) ? $d['model_id'] : 0);
+    $image_url = isset($d['image_url']) ? trim($d['image_url']) : '';
+    if ($model_id <= 0 || $image_url === '') json_out(array('ok' => false, 'error' => 'model_id and image_url required'));
+    if (!model_owned_by_workspace($db, $model_id, $WORKSPACE_ID)) json_out(array('ok' => false, 'error' => 'not found'));
+    $sort_stmt = $db->prepare('SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_sort FROM model_gallery_photos WHERE model_id=?');
+    $sort_stmt->bind_param('i', $model_id);
+    $sort_stmt->execute();
+    $next_sort = intval($sort_stmt->get_result()->fetch_assoc()['next_sort']);
+    $stmt = $db->prepare('INSERT INTO model_gallery_photos (model_id, image_url, sort_order) VALUES (?, ?, ?)');
+    $stmt->bind_param('isi', $model_id, $image_url, $next_sort);
+    if (!$stmt->execute()) json_out(array('ok' => false, 'error' => $db->error));
+    json_out(array('ok' => true, 'id' => $db->insert_id));
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'delete_model_gallery_photo') {
+    $d = json_decode(file_get_contents('php://input'), true);
+    $id = intval(isset($d['id']) ? $d['id'] : 0);
+    if ($id <= 0) json_out(array('ok' => false, 'error' => 'id required'));
+    $stmt = $db->prepare('DELETE model_gallery_photos FROM model_gallery_photos
+        INNER JOIN models ON models.id = model_gallery_photos.model_id
+        WHERE model_gallery_photos.id=? AND models.workspace_id=?');
+    $stmt->bind_param('ii', $id, $WORKSPACE_ID);
+    $stmt->execute();
+    json_out(array('ok' => true, 'affected' => $db->affected_rows));
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'update_option_image') {
@@ -1472,6 +1525,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'toggle_option_active')
     json_out(array('ok' => true, 'affected' => $db->affected_rows));
 }
 
+// Sets an option's active models in one call (the checkbox list in the option editor), rather
+// than requiring the admin to switch the selected model and toggle one at a time. Rows for
+// every workspace model are upserted so this also backfills any missing
+// option_model_availability rows (e.g. a model added after the option was created).
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'set_option_active_models') {
+    $data = json_decode(file_get_contents('php://input'), true);
+    if (!$data) $data = $_POST;
+    $option_id = intval(isset($data['option_id']) ? $data['option_id'] : 0);
+    $model_ids = isset($data['model_ids']) && is_array($data['model_ids']) ? array_values(array_map('intval', $data['model_ids'])) : array();
+    if ($option_id <= 0) json_out(array('ok' => false, 'error' => 'option_id required'));
+    if (!option_owned_by_workspace($db, $option_id, $WORKSPACE_ID)) json_out(array('ok' => false, 'error' => 'not found'));
+
+    $models_stmt = $db->prepare('SELECT id FROM models WHERE workspace_id=?');
+    $models_stmt->bind_param('i', $WORKSPACE_ID);
+    $models_stmt->execute();
+    $mres = $models_stmt->get_result();
+    $desired = array_flip($model_ids);
+    $stmt = $db->prepare('INSERT INTO option_model_availability (option_id, model_id, is_active) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE is_active=VALUES(is_active)');
+    while ($row = $mres->fetch_assoc()) {
+        $mid = intval($row['id']);
+        $is_active = isset($desired[$mid]) ? 1 : 0;
+        $stmt->bind_param('iii', $option_id, $mid, $is_active);
+        $stmt->execute();
+    }
+    json_out(array('ok' => true));
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'set_option_model_photo') {
     $data = json_decode(file_get_contents('php://input'), true);
     if (!$data) $data = $_POST;
@@ -1536,6 +1616,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'create_calculation') {
     $model_bp_stmt->execute();
     $model_bp_row = $model_bp_stmt->get_result()->fetch_assoc();
     $model_base_price = $model_bp_row ? floatval($model_bp_row['base_price']) : 0;
+
+    // Snapshot each option's own display data (name/price/group/etc.) at creation time — the
+    // page promises "Предложение фиксируется по ссылке и не меняется", but selected_options
+    // used to store only {id, qty} and re-join options_catalog live on every view, so renaming
+    // or deleting an option later silently changed or dropped it from every offer that already
+    // used it. get_calculation now prefers this embedded data over a live lookup.
+    if (count($selected_options) > 0) {
+        $snap_ids = array_map(function ($so) { return $so['id']; }, $selected_options);
+        $snap_placeholders = implode(',', array_fill(0, count($snap_ids), '?'));
+        $snap_types = str_repeat('i', count($snap_ids));
+        $snap_stmt = $db->prepare("SELECT o.id, o.group_id, o.name, o.price, o.base_price, o.max_length, o.max_width, o.unit, COALESCE(oma.image_url, o.image_url) as image_url, IFNULL(g.name,'Опция') as group_name
+            FROM options_catalog o
+            LEFT JOIN option_groups g ON g.id=o.group_id
+            LEFT JOIN option_model_availability oma ON oma.option_id=o.id AND oma.model_id=$model_id
+            WHERE o.workspace_id=$WORKSPACE_ID AND o.id IN ($snap_placeholders)");
+        $snap_stmt->bind_param($snap_types, ...$snap_ids);
+        $snap_stmt->execute();
+        $snap_res = $snap_stmt->get_result();
+        $snap_data_by_id = array();
+        while ($r = $snap_res->fetch_assoc()) $snap_data_by_id[intval($r['id'])] = $r;
+        foreach ($selected_options as &$so) {
+            if (!isset($snap_data_by_id[$so['id']])) continue;
+            $d = $snap_data_by_id[$so['id']];
+            $so['group_id'] = intval($d['group_id']);
+            $so['name'] = $d['name'];
+            $so['price'] = floatval($d['price']);
+            $so['base_price'] = floatval($d['base_price']);
+            $so['max_length'] = intval($d['max_length']);
+            $so['max_width'] = intval($d['max_width']);
+            $so['unit'] = $d['unit'];
+            $so['image_url'] = $d['image_url'];
+            $so['group_name'] = $d['group_name'];
+        }
+        unset($so);
+    }
+
     $snapshot_data = array('model_id' => $model_id, 'layout_id' => $layout_id, 'selected_options' => $selected_options, 'base_price' => $model_base_price);
     if (!empty($option_choices)) $snapshot_data['option_choices'] = $option_choices;
     if (!empty($option_dimensions)) $snapshot_data['option_dimensions'] = $option_dimensions;
@@ -1593,25 +1709,62 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'get_calculation') {
     $layout = $stmt3->get_result()->fetch_assoc();
     $selected_options = array();
     if (count($option_ids) > 0) {
-        $placeholders = implode(',', array_fill(0, count($option_ids), '?'));
-        $types = str_repeat('i', count($option_ids));
-        // COALESCE onto the per-model photo override (if the seller set one for this model)
-        // so the saved offer shows exactly the picture the buyer saw while configuring.
-        $stmt4 = $db->prepare("SELECT o.id, o.group_id, o.sort_order, o.name, o.price, o.base_price, o.max_length, o.max_width, o.unit, COALESCE(oma.image_url, o.image_url) as image_url, IFNULL(g.name,'Опция') as group_name
-            FROM options_catalog o
-            LEFT JOIN option_groups g ON g.id=o.group_id
-            LEFT JOIN option_model_availability oma ON oma.option_id=o.id AND oma.model_id=$model_id
-            WHERE o.workspace_id=$calc_workspace_id AND o.id IN ($placeholders)");
-        $stmt4->bind_param($types, ...$option_ids);
-        $stmt4->execute();
-        $res = $stmt4->get_result();
         $snap_choices = isset($snapshot['option_choices']) && is_array($snapshot['option_choices']) ? $snapshot['option_choices'] : array();
         $snap_dimensions = isset($snapshot['option_dimensions']) && is_array($snapshot['option_dimensions']) ? $snapshot['option_dimensions'] : array();
-        while ($row = $res->fetch_assoc()) {
-            $qty = $qty_by_id[intval($row['id'])];
+
+        // New-format snapshots (see create_calculation) already carry each option's own
+        // name/price/group, captured at creation time — used in preference to a live lookup so
+        // a later rename/delete in options_catalog can't change or blank an already-shared
+        // offer. Only genuinely old snapshots (id+qty only) still need the live join below.
+        $snapshot_options_by_id = array();
+        foreach ($snapshot['selected_options'] as $so) {
+            if (isset($so['name'])) $snapshot_options_by_id[intval($so['id'])] = $so;
+        }
+        $ids_needing_live_lookup = array_values(array_diff($option_ids, array_keys($snapshot_options_by_id)));
+
+        $live_rows_by_id = array();
+        if (count($ids_needing_live_lookup) > 0) {
+            $placeholders = implode(',', array_fill(0, count($ids_needing_live_lookup), '?'));
+            $types = str_repeat('i', count($ids_needing_live_lookup));
+            // COALESCE onto the per-model photo override (if the seller set one for this model)
+            // so the saved offer shows exactly the picture the buyer saw while configuring.
+            $stmt4 = $db->prepare("SELECT o.id, o.group_id, o.sort_order, o.name, o.price, o.base_price, o.max_length, o.max_width, o.unit, COALESCE(oma.image_url, o.image_url) as image_url, IFNULL(g.name,'Опция') as group_name
+                FROM options_catalog o
+                LEFT JOIN option_groups g ON g.id=o.group_id
+                LEFT JOIN option_model_availability oma ON oma.option_id=o.id AND oma.model_id=$model_id
+                WHERE o.workspace_id=$calc_workspace_id AND o.id IN ($placeholders)");
+            $stmt4->bind_param($types, ...$ids_needing_live_lookup);
+            $stmt4->execute();
+            $res = $stmt4->get_result();
+            while ($row = $res->fetch_assoc()) $live_rows_by_id[intval($row['id'])] = $row;
+        }
+
+        foreach ($option_ids as $oid) {
+            if (isset($snapshot_options_by_id[$oid])) {
+                $so = $snapshot_options_by_id[$oid];
+                $row = array(
+                    'id' => $oid,
+                    'group_id' => isset($so['group_id']) ? intval($so['group_id']) : 0,
+                    'sort_order' => 0,
+                    'name' => $so['name'],
+                    'price' => floatval($so['price']),
+                    'base_price' => floatval(isset($so['base_price']) ? $so['base_price'] : 0),
+                    'max_length' => intval(isset($so['max_length']) ? $so['max_length'] : 0),
+                    'max_width' => intval(isset($so['max_width']) ? $so['max_width'] : 0),
+                    'unit' => isset($so['unit']) ? $so['unit'] : 'шт',
+                    'image_url' => isset($so['image_url']) ? $so['image_url'] : '',
+                    'group_name' => isset($so['group_name']) ? $so['group_name'] : 'Опция',
+                );
+            } elseif (isset($live_rows_by_id[$oid])) {
+                $row = $live_rows_by_id[$oid];
+            } else {
+                continue; // no snapshot data and no longer in the catalog — nothing left to show
+            }
+
+            $qty = $qty_by_id[$oid];
             $row['qty'] = $qty;
             $choice_price = 0;
-            $choice_key = strval($row['id']);
+            $choice_key = strval($oid);
             if (isset($snap_choices[$choice_key])) {
                 $ch = $snap_choices[$choice_key];
                 $row['popup_choice_name'] = isset($ch['name']) ? $ch['name'] : null;
@@ -1677,6 +1830,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'get_calculation') {
     // base_price: prefer value saved at creation time, fallback to current model price
     $base_price = isset($snapshot['base_price']) ? floatval($snapshot['base_price']) : ($model ? floatval($model['base_price']) : 0);
 
+    $model_gallery = array();
+    if ($model_id) {
+        $gstmt = $db->prepare('SELECT id, image_url, image_crop FROM model_gallery_photos WHERE model_id=? ORDER BY sort_order ASC, id ASC');
+        $gstmt->bind_param('i', $model_id);
+        $gstmt->execute();
+        $gres = $gstmt->get_result();
+        while ($g = $gres->fetch_assoc()) {
+            $model_gallery[] = array('id' => intval($g['id']), 'image_url' => $g['image_url'], 'image_crop' => $g['image_crop']);
+        }
+    }
+
     // Popup blocks (e.g. "what's included") can be duplicated and re-scoped per model via
     // model_ids — only the block(s) actually allowed for THIS calculation's model should be
     // shown, or duplicated blocks with the same content render as repeated items.
@@ -1701,11 +1865,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'get_calculation') {
         'model_name' => $model ? $model['name'] : 'Модель',
         'model_image_url' => $model_image,
         'model_offer_image_crop' => $model ? ($model['offer_image_crop'] ?? null) : null,
+        'model_gallery_photos' => $model_gallery,
         'model_id' => $model_id,
         'layout_name' => $layout ? $layout['name'] : 'Планировка',
         'selected_options' => $selected_options,
         'account' => isset($snapshot['account']) ? $snapshot['account'] : null,
         'popup_group_ids' => $popup_group_ids,
+    ));
+}
+
+// Raw restore data for "Изменить конфигурацию" on the generated offer page — unlike
+// get_calculation (which resolves everything into display-ready fields for the fixed offer),
+// this returns just the ids/qty/choices/dimensions needed to re-select everything back in the
+// interactive configurator. Public/slug-scoped, same as get_calculation — no session required.
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'get_calculation_config') {
+    $slug = isset($_GET['slug']) ? trim($_GET['slug']) : '';
+    if (!$slug) json_out(array('ok' => false, 'error' => 'slug required'));
+    $stmt = $db->prepare('SELECT config_snapshot FROM calculations WHERE public_slug=? LIMIT 1');
+    $stmt->bind_param('s', $slug);
+    $stmt->execute();
+    $calc = $stmt->get_result()->fetch_assoc();
+    if (!$calc) json_out(array('ok' => false, 'error' => 'not found'));
+    $snapshot = json_decode($calc['config_snapshot'], true);
+    if (!$snapshot) json_out(array('ok' => false, 'error' => 'invalid snapshot'));
+    $selected = array();
+    if (isset($snapshot['selected_options']) && is_array($snapshot['selected_options'])) {
+        foreach ($snapshot['selected_options'] as $so) {
+            $selected[] = array(
+                'id' => intval($so['id']),
+                'group_id' => isset($so['group_id']) ? intval($so['group_id']) : null,
+                'qty' => max(1, intval(isset($so['qty']) ? $so['qty'] : 1)),
+            );
+        }
+    } elseif (isset($snapshot['selected_option_ids'])) {
+        foreach ((array)$snapshot['selected_option_ids'] as $oid) {
+            $selected[] = array('id' => intval($oid), 'group_id' => null, 'qty' => 1);
+        }
+    }
+    json_out(array(
+        'ok' => true,
+        'model_id' => isset($snapshot['model_id']) ? intval($snapshot['model_id']) : 0,
+        'layout_id' => isset($snapshot['layout_id']) ? intval($snapshot['layout_id']) : 0,
+        'selected_options' => $selected,
+        'option_choices' => isset($snapshot['option_choices']) && is_array($snapshot['option_choices']) ? $snapshot['option_choices'] : new stdClass(),
+        'option_dimensions' => isset($snapshot['option_dimensions']) && is_array($snapshot['option_dimensions']) ? $snapshot['option_dimensions'] : new stdClass(),
     ));
 }
 
